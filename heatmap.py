@@ -1,10 +1,12 @@
 import tkinter as tk
 import random
+from datetime import date, timedelta
 
 # Size settings for the heatmap (in pixels)
 SQUARE_SIZE = 14
 GAP = 3
 PADDING = 10
+NUMBER_OF_DAYS = 90
 
 
 # Return the color for a given number of habits done in one day
@@ -21,9 +23,35 @@ def get_color(count):
         return "#39d353"
 
 
-# Draw one square per day on the canvas, 7 days in each column
-def draw_heatmap(canvas, counts):
-    for i in range(len(counts)):
+# Show the clicked day's date and count in the info label
+def show_day(info_label, date_text, count):
+    info_label.config(text=f"{date_text}: {count} habits done")
+
+
+# Draw the "Less [5 color boxes] More" legend under the grid
+def draw_legend(canvas):
+    top = PADDING + 7 * (SQUARE_SIZE + GAP) + 10
+    middle = top + SQUARE_SIZE / 2
+
+    canvas.create_text(PADDING, middle, text="Less", fill="#8b949e", font=("Arial", 9), anchor="w")
+
+    for level in range(5):
+        x1 = PADDING + 30 + level * (SQUARE_SIZE + GAP)
+        canvas.create_rectangle(x1, top, x1 + SQUARE_SIZE, top + SQUARE_SIZE, fill=get_color(level), outline="")
+
+    more_x = PADDING + 30 + 5 * (SQUARE_SIZE + GAP) + 3
+    canvas.create_text(more_x, middle, text="More", fill="#8b949e", font=("Arial", 9), anchor="w")
+
+
+# Draw one clickable square per day for the last 90 days, 7 days in each column
+def draw_heatmap(canvas, counts, info_label):
+    today = date.today()
+
+    for i in range(NUMBER_OF_DAYS):
+        day = today - timedelta(days=NUMBER_OF_DAYS - 1 - i)
+        date_text = day.strftime("%Y-%m-%d")
+        count = counts.get(date_text, 0)
+
         column = i // 7
         row = i % 7
 
@@ -32,8 +60,10 @@ def draw_heatmap(canvas, counts):
         x2 = x1 + SQUARE_SIZE
         y2 = y1 + SQUARE_SIZE
 
-        color = get_color(counts[i])
-        canvas.create_rectangle(x1, y1, x2, y2, fill=color, outline="")
+        square = canvas.create_rectangle(x1, y1, x2, y2, fill=get_color(count), outline="")
+        canvas.tag_bind(square, "<Button-1>", lambda event, d=date_text, c=count: show_day(info_label, d, c))
+
+    draw_legend(canvas)
 
 
 if __name__ == "__main__":
@@ -41,14 +71,19 @@ if __name__ == "__main__":
     window.title("Consistify - Heatmap")
     window.configure(bg="#0d1117")
 
-    # 240 x 140 is just big enough for 13 columns and 7 rows of squares
-    canvas = tk.Canvas(window, width=240, height=140, bg="#0d1117", highlightthickness=0)
-    canvas.pack(padx=20, pady=20)
+    # 240 x 170 fits 13 columns, 7 rows, and the legend underneath
+    canvas = tk.Canvas(window, width=240, height=170, bg="#0d1117", highlightthickness=0)
+    canvas.pack(padx=20, pady=(20, 5))
 
-    # Make 90 fake days, each with a random count from 0 to 4
-    fake_counts = []
-    for day in range(90):
-        fake_counts.append(random.randint(0, 4))
+    info_label = tk.Label(window, text="Click a square to see details", bg="#0d1117", fg="#c9d1d9", font=("Arial", 10))
+    info_label.pack(pady=(0, 20))
 
-    draw_heatmap(canvas, fake_counts)
+    # Make a fake dictionary: one entry per day for the last 90 days
+    fake_counts = {}
+    today = date.today()
+    for days_ago in range(NUMBER_OF_DAYS):
+        day = today - timedelta(days=days_ago)
+        fake_counts[day.strftime("%Y-%m-%d")] = random.randint(0, 4)
+
+    draw_heatmap(canvas, fake_counts, info_label)
     window.mainloop()
