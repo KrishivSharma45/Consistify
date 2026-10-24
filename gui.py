@@ -2,6 +2,8 @@
 import tkinter as tk
 # Import messagebox, tkinter's ready-made pop-up message windows
 from tkinter import messagebox
+# Import date so we can get today's date
+from datetime import date
 
 # Import our own database.py so we can save and load habits
 import database
@@ -93,9 +95,27 @@ def refresh_habit_list(habit_list_frame):
     for child in habit_list_frame.winfo_children():
         child.destroy()
 
+    today = date.today().isoformat()
+
     for habit_id, name in database.get_all_habits():
         row_frame = tk.Frame(habit_list_frame, bg=BG_COLOR)
         row_frame.pack(fill="x", padx=15, pady=5)
+
+        done_var = tk.BooleanVar(value=database.is_done(habit_id, today))
+        done_checkbox = tk.Checkbutton(
+            row_frame,
+            variable=done_var,
+            bg=BG_COLOR,
+            fg=TEXT_COLOR,
+            selectcolor=ENTRY_BG,
+            activebackground=BG_COLOR,
+            activeforeground=TEXT_COLOR,
+            highlightthickness=0,
+            command=lambda habit_id=habit_id, done_var=done_var: on_check_click(
+                habit_id, done_var, habit_list_frame
+            ),
+        )
+        done_checkbox.pack(side="left")
 
         name_label = tk.Label(
             row_frame,
@@ -105,6 +125,15 @@ def refresh_habit_list(habit_list_frame):
             bg=BG_COLOR,
         )
         name_label.pack(side="left")
+
+        streak_label = tk.Label(
+            row_frame,
+            text="🔥 " + str(database.get_streak(habit_id)) + " day streak",
+            font=("Segoe UI", 10),
+            fg=ACCENT_COLOR,
+            bg=BG_COLOR,
+        )
+        streak_label.pack(side="left", padx=(15, 0))
 
         delete_button = tk.Button(
             row_frame,
@@ -131,6 +160,18 @@ def on_add_click(habit_entry, habit_list_frame):
         messagebox.showwarning("Consistify", "Habit already exists")
 
     habit_entry.delete(0, tk.END)
+    refresh_habit_list(habit_list_frame)
+
+
+# Mark or unmark a habit as done today, depending on its checkbox, then redraw the list
+def on_check_click(habit_id, done_var, habit_list_frame):
+    today = date.today().isoformat()
+
+    if done_var.get():
+        database.mark_done(habit_id, today)
+    else:
+        database.unmark_done(habit_id, today)
+
     refresh_habit_list(habit_list_frame)
 
 
