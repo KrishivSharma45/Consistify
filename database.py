@@ -1,3 +1,4 @@
+import csv
 import sqlite3
 from datetime import date, timedelta
 
@@ -235,6 +236,41 @@ def get_habits_done_on(date_str):
     return names
 
 
+# Write a CSV report with one row of stats per habit and return the filename
+def export_to_csv(filename="consistify_report.csv"):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    with open(filename, "w", newline="") as file:
+        writer = csv.writer(file)
+        writer.writerow([
+            "Habit",
+            "Current Streak",
+            "Best Streak",
+            "Completion % (30 days)",
+            "Total Days Done",
+        ])
+
+        for habit_id, name in get_all_habits():
+            cursor.execute(
+                "SELECT COUNT(*) FROM logs WHERE habit_id = ?",
+                (habit_id,),
+            )
+            total_days = cursor.fetchone()[0]
+
+            writer.writerow([
+                name,
+                get_streak(habit_id),
+                get_best_streak(habit_id),
+                get_completion_percent(habit_id),
+                total_days,
+            ])
+
+    conn.commit()
+    conn.close()
+    return filename
+
+
 if __name__ == "__main__":
     create_tables()
     print("Tables created")
@@ -256,3 +292,5 @@ if __name__ == "__main__":
     print(get_best_streak(reading_id))
     print(get_completion_percent(reading_id))
     print(get_habits_done_on(today.isoformat()))
+
+    print(export_to_csv())
