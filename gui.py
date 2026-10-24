@@ -108,7 +108,7 @@ def create_habit_list_area(window):
 
 
 # Remove every row from the habit list area, then draw one row per habit from the database
-def refresh_habit_list(habit_list_frame):
+def refresh_habit_list(habit_list_frame, on_change=None):
     for child in habit_list_frame.winfo_children():
         child.destroy()
 
@@ -129,7 +129,7 @@ def refresh_habit_list(habit_list_frame):
             activeforeground=TEXT_COLOR,
             highlightthickness=0,
             command=lambda habit_id=habit_id, done_var=done_var: on_check_click(
-                habit_id, done_var, habit_list_frame
+                habit_id, done_var, habit_list_frame, on_change
             ),
         )
         done_checkbox.pack(side="left")
@@ -162,13 +162,13 @@ def refresh_habit_list(habit_list_frame):
             activeforeground=TEXT_COLOR,
             relief="flat",
             padx=8,
-            command=lambda habit_id=habit_id: on_delete_click(habit_id, habit_list_frame),
+            command=lambda habit_id=habit_id: on_delete_click(habit_id, habit_list_frame, on_change),
         )
         delete_button.pack(side="right")
 
 
 # Add the habit typed in the Entry box, warn if it already exists, then redraw the list
-def on_add_click(habit_entry, habit_list_frame):
+def on_add_click(habit_entry, habit_list_frame, on_change=None):
     name = habit_entry.get().strip()
     if name == "":
         return
@@ -177,11 +177,13 @@ def on_add_click(habit_entry, habit_list_frame):
         messagebox.showwarning("Consistify", "Habit already exists")
 
     habit_entry.delete(0, tk.END)
-    refresh_habit_list(habit_list_frame)
+    refresh_habit_list(habit_list_frame, on_change)
+    if on_change is not None:
+        on_change()
 
 
 # Mark or unmark a habit as done today, depending on its checkbox, then redraw the list
-def on_check_click(habit_id, done_var, habit_list_frame):
+def on_check_click(habit_id, done_var, habit_list_frame, on_change=None):
     today = date.today().isoformat()
 
     if done_var.get():
@@ -189,7 +191,9 @@ def on_check_click(habit_id, done_var, habit_list_frame):
     else:
         database.unmark_done(habit_id, today)
 
-    refresh_habit_list(habit_list_frame)
+    refresh_habit_list(habit_list_frame, on_change)
+    if on_change is not None:
+        on_change()
 
 
 # Ask where to save the report, then write the CSV there (do nothing if cancelled)
@@ -208,9 +212,23 @@ def on_export_click():
 
 
 # Delete one habit from the database, then redraw the list
-def on_delete_click(habit_id, habit_list_frame):
+def on_delete_click(habit_id, habit_list_frame, on_change=None):
     database.delete_habit(habit_id)
-    refresh_habit_list(habit_list_frame)
+    refresh_habit_list(habit_list_frame, on_change)
+    if on_change is not None:
+        on_change()
+
+
+# Build the whole habit section (header, input row, habit list) inside any window or frame
+def create_habit_section(parent, on_change=None):
+    create_header(parent)
+    habit_entry, add_button = create_input_row(parent)
+    habit_list_frame = create_habit_list_area(parent)
+
+    add_button.config(command=lambda: on_add_click(habit_entry, habit_list_frame, on_change))
+    habit_entry.bind("<Return>", lambda event: on_add_click(habit_entry, habit_list_frame, on_change))
+
+    refresh_habit_list(habit_list_frame, on_change)
 
 
 # Run this block only when gui.py is started directly (not when imported)
@@ -218,12 +236,5 @@ if __name__ == "__main__":
     database.create_tables()
 
     window = create_window()
-    create_header(window)
-    habit_entry, add_button = create_input_row(window)
-    habit_list_frame = create_habit_list_area(window)
-
-    add_button.config(command=lambda: on_add_click(habit_entry, habit_list_frame))
-    habit_entry.bind("<Return>", lambda event: on_add_click(habit_entry, habit_list_frame))
-
-    refresh_habit_list(habit_list_frame)
+    create_habit_section(window)
     window.mainloop()
