@@ -1,6 +1,7 @@
 import tkinter as tk
-import random
 from datetime import date, timedelta
+
+import database
 
 # Size settings for the heatmap (in pixels)
 SQUARE_SIZE = 14
@@ -66,7 +67,29 @@ def draw_heatmap(canvas, counts, info_label):
     draw_legend(canvas)
 
 
+# Ask the database how many habits were done on each of the last 90 days
+def get_counts_from_database():
+    counts = {}
+    today = date.today()
+
+    for days_ago in range(NUMBER_OF_DAYS):
+        day = today - timedelta(days=days_ago)
+        date_text = day.strftime("%Y-%m-%d")
+        counts[date_text] = database.get_count_for_date(date_text)
+
+    return counts
+
+
+# Wipe the canvas and redraw the heatmap with fresh numbers from the database
+def refresh_heatmap(canvas, info_label):
+    canvas.delete("all")
+    counts = get_counts_from_database()
+    draw_heatmap(canvas, counts, info_label)
+
+
 if __name__ == "__main__":
+    database.create_tables()
+
     window = tk.Tk()
     window.title("Consistify - Heatmap")
     window.configure(bg="#0d1117")
@@ -75,15 +98,8 @@ if __name__ == "__main__":
     canvas = tk.Canvas(window, width=240, height=170, bg="#0d1117", highlightthickness=0)
     canvas.pack(padx=20, pady=(20, 5))
 
-    info_label = tk.Label(window, text="Click a square to see details", bg="#0d1117", fg="#c9d1d9", font=("Arial", 10))
+    info_label = tk.Label(window, text="Click a square to see details", bg="#0d1117", fg="#e6edf3", font=("Arial", 10))
     info_label.pack(pady=(0, 20))
 
-    # Make a fake dictionary: one entry per day for the last 90 days
-    fake_counts = {}
-    today = date.today()
-    for days_ago in range(NUMBER_OF_DAYS):
-        day = today - timedelta(days=days_ago)
-        fake_counts[day.strftime("%Y-%m-%d")] = random.randint(0, 4)
-
-    draw_heatmap(canvas, fake_counts, info_label)
+    refresh_heatmap(canvas, info_label)
     window.mainloop()
