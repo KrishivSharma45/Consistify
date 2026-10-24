@@ -1,5 +1,10 @@
 # Import tkinter (Python's built-in GUI library) and give it the short name "tk"
 import tkinter as tk
+# Import messagebox, tkinter's ready-made pop-up message windows
+from tkinter import messagebox
+
+# Import our own database.py so we can save and load habits
+import database
 
 # Theme colors, stored once at the top so every widget uses the same values
 BG_COLOR = "#0d1117"       # dark background
@@ -68,7 +73,7 @@ def create_input_row(window):
     )
     add_button.pack(side="left")
 
-    return habit_entry
+    return habit_entry, add_button
 
 
 # Create an empty bordered area that will hold the habit list later
@@ -83,10 +88,69 @@ def create_habit_list_area(window):
     return habit_list_frame
 
 
+# Remove every row from the habit list area, then draw one row per habit from the database
+def refresh_habit_list(habit_list_frame):
+    for child in habit_list_frame.winfo_children():
+        child.destroy()
+
+    for habit_id, name in database.get_all_habits():
+        row_frame = tk.Frame(habit_list_frame, bg=BG_COLOR)
+        row_frame.pack(fill="x", padx=15, pady=5)
+
+        name_label = tk.Label(
+            row_frame,
+            text=name,
+            font=("Segoe UI", 12),
+            fg=TEXT_COLOR,
+            bg=BG_COLOR,
+        )
+        name_label.pack(side="left")
+
+        delete_button = tk.Button(
+            row_frame,
+            text="Delete",
+            font=("Segoe UI", 9),
+            bg=ENTRY_BG,
+            fg=TEXT_COLOR,
+            activebackground=BORDER_COLOR,
+            activeforeground=TEXT_COLOR,
+            relief="flat",
+            padx=8,
+            command=lambda habit_id=habit_id: on_delete_click(habit_id, habit_list_frame),
+        )
+        delete_button.pack(side="right")
+
+
+# Add the habit typed in the Entry box, warn if it already exists, then redraw the list
+def on_add_click(habit_entry, habit_list_frame):
+    name = habit_entry.get().strip()
+    if name == "":
+        return
+
+    if not database.add_habit(name):
+        messagebox.showwarning("Consistify", "Habit already exists")
+
+    habit_entry.delete(0, tk.END)
+    refresh_habit_list(habit_list_frame)
+
+
+# Delete one habit from the database, then redraw the list
+def on_delete_click(habit_id, habit_list_frame):
+    database.delete_habit(habit_id)
+    refresh_habit_list(habit_list_frame)
+
+
 # Run this block only when gui.py is started directly (not when imported)
 if __name__ == "__main__":
+    database.create_tables()
+
     window = create_window()
     create_header(window)
-    create_input_row(window)
-    create_habit_list_area(window)
+    habit_entry, add_button = create_input_row(window)
+    habit_list_frame = create_habit_list_area(window)
+
+    add_button.config(command=lambda: on_add_click(habit_entry, habit_list_frame))
+    habit_entry.bind("<Return>", lambda event: on_add_click(habit_entry, habit_list_frame))
+
+    refresh_habit_list(habit_list_frame)
     window.mainloop()
