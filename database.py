@@ -160,6 +160,81 @@ def get_count_for_date(date_str):
     return count
 
 
+# Return the longest run of consecutive done days ever logged for a habit
+def get_best_streak(habit_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT date FROM logs WHERE habit_id = ? ORDER BY date",
+        (habit_id,),
+    )
+    rows = cursor.fetchall()
+
+    conn.commit()
+    conn.close()
+
+    if len(rows) == 0:
+        return 0
+
+    best = 1
+    current = 1
+    previous_day = date.fromisoformat(rows[0][0])
+
+    for row in rows[1:]:
+        this_day = date.fromisoformat(row[0])
+        if this_day - previous_day == timedelta(days=1):
+            current = current + 1
+        else:
+            current = 1
+        if current > best:
+            best = current
+        previous_day = this_day
+
+    return best
+
+
+# Return the percent (0-100) of the last `days` days, including today, that were done
+def get_completion_percent(habit_id, days=30):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    today = date.today()
+    start_day = today - timedelta(days=days - 1)
+
+    cursor.execute(
+        "SELECT COUNT(*) FROM logs WHERE habit_id = ? AND date >= ? AND date <= ?",
+        (habit_id, start_day.isoformat(), today.isoformat()),
+    )
+    done_days = cursor.fetchone()[0]
+
+    conn.commit()
+    conn.close()
+    return round(done_days * 100 / days)
+
+
+# Return a list of the names of habits done on a date
+def get_habits_done_on(date_str):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT habits.name FROM habits "
+        "JOIN logs ON habits.id = logs.habit_id "
+        "WHERE logs.date = ? ORDER BY habits.id",
+        (date_str,),
+    )
+    rows = cursor.fetchall()
+
+    conn.commit()
+    conn.close()
+
+    names = []
+    for row in rows:
+        names.append(row[0])
+    return names
+
+
 if __name__ == "__main__":
     create_tables()
     print("Tables created")
@@ -177,3 +252,7 @@ if __name__ == "__main__":
     print(get_streak(reading_id))
     print(is_done(reading_id, today.isoformat()))
     print(get_count_for_date(today.isoformat()))
+
+    print(get_best_streak(reading_id))
+    print(get_completion_percent(reading_id))
+    print(get_habits_done_on(today.isoformat()))
