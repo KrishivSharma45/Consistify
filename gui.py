@@ -2,6 +2,8 @@
 import tkinter as tk
 # Import messagebox, tkinter's ready-made pop-up message windows
 from tkinter import messagebox
+# Import filedialog, tkinter's ready-made "Open" and "Save As" windows
+from tkinter import filedialog
 # Import date so we can get today's date
 from datetime import date
 
@@ -46,7 +48,7 @@ def create_header(window):
     subtitle_label.pack(pady=(5, 20))
 
 
-# Create one row holding the text box and the "Add Habit" button side by side
+# Create one row holding the text box, the "Add Habit" button and the "Export CSV" button side by side
 def create_input_row(window):
     input_frame = tk.Frame(window, bg=BG_COLOR)
     input_frame.pack(pady=10)
@@ -74,6 +76,21 @@ def create_input_row(window):
         pady=5,
     )
     add_button.pack(side="left")
+
+    export_button = tk.Button(
+        input_frame,
+        text="Export CSV",
+        font=("Segoe UI", 11, "bold"),
+        bg=ENTRY_BG,
+        fg=ACCENT_COLOR,
+        activebackground=BORDER_COLOR,
+        activeforeground=ACCENT_COLOR,
+        relief="flat",
+        padx=15,
+        pady=5,
+        command=on_export_click,
+    )
+    export_button.pack(side="left", padx=(10, 0))
 
     return habit_entry, add_button
 
@@ -173,6 +190,21 @@ def on_check_click(habit_id, done_var, habit_list_frame):
         database.unmark_done(habit_id, today)
 
     refresh_habit_list(habit_list_frame)
+
+
+# Ask where to save the report, then write the CSV there (do nothing if cancelled)
+def on_export_click():
+    filename = filedialog.asksaveasfilename(
+        title="Save report",
+        initialfile="consistify_report.csv",
+        defaultextension=".csv",
+        filetypes=[("CSV files", "*.csv")],
+    )
+    if not filename:
+        return
+
+    database.export_to_csv(filename)
+    messagebox.showinfo("Consistify", "Report saved!")
 
 
 # Delete one habit from the database, then redraw the list
