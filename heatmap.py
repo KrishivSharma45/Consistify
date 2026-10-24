@@ -30,13 +30,19 @@ def get_color(count):
         return "#39d353"
 
 
-# Show the clicked day's date and count in the info label
+# Show the clicked day's date, count and the names of the habits done that day
 def show_day(info_label, date_text, count):
     if count == 1:
         word = "habit"
     else:
         word = "habits"
-    info_label.config(text=f"{date_text}: {count} {word} done")
+    text = f"{date_text}: {count} {word} done"
+
+    names = database.get_habits_done_on(date_text)
+    if len(names) > 0:
+        text = text + "\n" + ", ".join(names)
+
+    info_label.config(text=text)
 
 
 # Change the mouse pointer when it moves over or off a square
@@ -91,7 +97,13 @@ def draw_heatmap(canvas, counts, info_label):
         x2 = x1 + SQUARE_SIZE
         y2 = y1 + SQUARE_SIZE
 
-        square = canvas.create_rectangle(x1, y1, x2, y2, fill=get_color(count), outline="")
+        # Give today's square a light border so it is easy to find
+        if day == today:
+            border = TEXT_COLOR
+        else:
+            border = ""
+
+        square = canvas.create_rectangle(x1, y1, x2, y2, fill=get_color(count), outline=border)
         canvas.tag_bind(square, "<Button-1>", lambda event, d=date_text, c=count: show_day(info_label, d, c))
         canvas.tag_bind(square, "<Enter>", lambda event: set_cursor(canvas, "hand2"))
         canvas.tag_bind(square, "<Leave>", lambda event: set_cursor(canvas, ""))
@@ -136,7 +148,8 @@ def create_heatmap_section(parent):
     canvas = tk.Canvas(section, width=280, height=180, bg=BG_COLOR, highlightthickness=0)
     canvas.pack()
 
-    info_label = tk.Label(section, text="Click a square to see details", bg=BG_COLOR, fg=TEXT_COLOR, font=("Arial", 10))
+    # wraplength=260 moves long text onto a new line instead of stretching the window
+    info_label = tk.Label(section, text="Click a square to see details", bg=BG_COLOR, fg=TEXT_COLOR, font=("Arial", 10), wraplength=260)
     info_label.pack()
 
     refresh_heatmap(canvas, info_label)
