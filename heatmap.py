@@ -31,14 +31,14 @@ def get_color(count):
 
 
 # Show the clicked day's date, count and the names of the habits done that day
-def show_day(info_label, date_text, count):
+def show_day(info_label, date_text, count, user_id):
     if count == 1:
         word = "habit"
     else:
         word = "habits"
     text = f"{date_text}: {count} {word} done"
 
-    names = database.get_habits_done_on(date_text)
+    names = database.get_habits_done_on(date_text, user_id)
     if len(names) > 0:
         text = text + "\n" + ", ".join(names)
 
@@ -84,7 +84,7 @@ def draw_legend(canvas):
 
 
 # Draw one clickable square per day for the last 90 days, one row per weekday
-def draw_heatmap(canvas, counts, info_label):
+def draw_heatmap(canvas, counts, info_label, user_id):
     today = date.today()
     first_day = today - timedelta(days=NUMBER_OF_DAYS - 1)
 
@@ -104,7 +104,7 @@ def draw_heatmap(canvas, counts, info_label):
             border = ""
 
         square = canvas.create_rectangle(x1, y1, x2, y2, fill=get_color(count), outline=border)
-        canvas.tag_bind(square, "<Button-1>", lambda event, d=date_text, c=count: show_day(info_label, d, c))
+        canvas.tag_bind(square, "<Button-1>", lambda event, d=date_text, c=count: show_day(info_label, d, c, user_id))
         canvas.tag_bind(square, "<Enter>", lambda event: set_cursor(canvas, "hand2"))
         canvas.tag_bind(square, "<Leave>", lambda event: set_cursor(canvas, ""))
 
@@ -116,28 +116,28 @@ def draw_heatmap(canvas, counts, info_label):
     draw_legend(canvas)
 
 
-# Ask the database how many habits were done on each of the last 90 days
-def get_counts_from_database():
+# Ask the database how many of one user's habits were done on each of the last 90 days
+def get_counts_from_database(user_id):
     counts = {}
     today = date.today()
 
     for days_ago in range(NUMBER_OF_DAYS):
         day = today - timedelta(days=days_ago)
         date_text = day.strftime("%Y-%m-%d")
-        counts[date_text] = database.get_count_for_date(date_text)
+        counts[date_text] = database.get_count_for_date(date_text, user_id)
 
     return counts
 
 
 # Wipe the canvas and redraw the heatmap with fresh numbers from the database
-def refresh_heatmap(canvas, info_label):
+def refresh_heatmap(canvas, info_label, user_id):
     canvas.delete("all")
-    counts = get_counts_from_database()
-    draw_heatmap(canvas, counts, info_label)
+    counts = get_counts_from_database(user_id)
+    draw_heatmap(canvas, counts, info_label, user_id)
 
 
-# Build the whole heatmap section (title, grid, info label) inside any window or frame
-def create_heatmap_section(parent):
+# Build the whole heatmap section (title, grid, info label) for one user inside any window or frame
+def create_heatmap_section(parent, user_id):
     section = tk.Frame(parent, bg=BG_COLOR)
     section.pack(pady=10)
 
@@ -152,21 +152,25 @@ def create_heatmap_section(parent):
     info_label = tk.Label(section, text="Click a square to see details", bg=BG_COLOR, fg=TEXT_COLOR, font=("Arial", 10), wraplength=260)
     info_label.pack()
 
-    refresh_heatmap(canvas, info_label)
+    refresh_heatmap(canvas, info_label, user_id)
     return canvas, info_label
 
 
 if __name__ == "__main__":
     database.create_tables()
 
+    # Log in as a test user (create_user just returns False if "demo" already exists)
+    database.create_user("demo", "demo123")
+    user_id = database.check_login("demo", "demo123")
+
     window = tk.Tk()
     window.title("Consistify - Heatmap")
     window.configure(bg=BG_COLOR, padx=20, pady=20)
 
-    canvas, info_label = create_heatmap_section(window)
+    canvas, info_label = create_heatmap_section(window, user_id)
 
     # A test button that redraws the heatmap, like main.py will do after a checkbox is ticked
-    refresh_button = tk.Button(window, text="Refresh", command=lambda: refresh_heatmap(canvas, info_label))
+    refresh_button = tk.Button(window, text="Refresh", command=lambda: refresh_heatmap(canvas, info_label, user_id))
     refresh_button.pack(pady=(10, 0))
 
     window.mainloop()
