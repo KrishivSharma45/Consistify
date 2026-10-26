@@ -14,6 +14,9 @@ TOP_MARGIN = 20
 BG_COLOR = "#0d1117"
 TEXT_COLOR = "#e6edf3"
 MUTED_COLOR = "#8b949e"
+ACCENT_COLOR = "#39d353"
+CARD_BG = "#161b22"
+BORDER_COLOR = "#30363d"
 
 
 # Return the color for a given number of habits done in one day
@@ -156,6 +159,57 @@ def create_heatmap_section(parent, user_id):
     return canvas, info_label
 
 
+# Turn a number of days into text: "1 day" or "5 days"
+def day_text(number):
+    if number == 1:
+        return "1 day"
+    return str(number) + " days"
+
+
+# Build a table with each habit's current streak, best streak and 30-day completion %
+def create_stats_section(parent, user_id):
+    section = tk.Frame(parent, bg=CARD_BG, highlightbackground=BORDER_COLOR, highlightthickness=1, padx=20, pady=15)
+    section.pack(fill="x", pady=(15, 0))
+
+    title_label = tk.Label(section, text="Stats", bg=CARD_BG, fg=TEXT_COLOR, font=("Arial", 12, "bold"))
+    title_label.pack(anchor="w", pady=(0, 8))
+
+    habits = database.get_all_habits(user_id)
+    if len(habits) == 0:
+        empty_label = tk.Label(section, text="No habits yet. Add some on the Today tab.", bg=CARD_BG, fg=MUTED_COLOR, font=("Arial", 10))
+        empty_label.pack(anchor="w")
+        return section
+
+    # A grid of labels: row 0 holds the headings, then one row per habit
+    table = tk.Frame(section, bg=CARD_BG)
+    table.pack(anchor="w")
+
+    headings = ["Habit", "Current streak", "Best streak", "Last 30 days"]
+    for column in range(len(headings)):
+        heading_label = tk.Label(table, text=headings[column], bg=CARD_BG, fg=MUTED_COLOR, font=("Arial", 9, "bold"))
+        heading_label.grid(row=0, column=column, sticky="w", padx=(0, 30), pady=(0, 6))
+
+    row = 1
+    for habit_id, name in habits:
+        values = [
+            name,
+            day_text(database.get_streak(habit_id)),
+            day_text(database.get_best_streak(habit_id)),
+            str(database.get_completion_percent(habit_id)) + "%",
+        ]
+        for column in range(len(values)):
+            # The percent column is green so it stands out
+            if column == 3:
+                color = ACCENT_COLOR
+            else:
+                color = TEXT_COLOR
+            value_label = tk.Label(table, text=values[column], bg=CARD_BG, fg=color, font=("Arial", 10))
+            value_label.grid(row=row, column=column, sticky="w", padx=(0, 30), pady=2)
+        row = row + 1
+
+    return section
+
+
 if __name__ == "__main__":
     database.create_tables()
 
@@ -168,6 +222,7 @@ if __name__ == "__main__":
     window.configure(bg=BG_COLOR, padx=20, pady=20)
 
     canvas, info_label = create_heatmap_section(window, user_id)
+    create_stats_section(window, user_id)
 
     # A test button that redraws the heatmap, like main.py will do after a checkbox is ticked
     refresh_button = tk.Button(window, text="Refresh", command=lambda: refresh_heatmap(canvas, info_label, user_id))
