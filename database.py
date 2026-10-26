@@ -1,6 +1,12 @@
 import csv
+import hashlib
+import hmac
+import os
 import sqlite3
 from datetime import date, timedelta
+
+# How many times the password is hashed; higher is slower for attackers (and for us)
+PASSWORD_ITERATIONS = 100000
 
 
 # Open a connection to the habits.db file (created automatically if missing)
@@ -9,15 +15,26 @@ def get_connection():
     return conn
 
 
-# Create the habits and logs tables if they don't already exist
+# Create the users, habits and logs tables if they don't already exist
 def create_tables():
     conn = get_connection()
     cursor = conn.cursor()
 
     cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            salt TEXT NOT NULL
+        )
+    """)
+
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS habits (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT UNIQUE NOT NULL
+            user_id INTEGER,
+            name TEXT NOT NULL,
+            UNIQUE(user_id, name)
         )
     """)
 
@@ -33,13 +50,67 @@ def create_tables():
     conn.close()
 
 
-# Add a new habit; return True if added, False if the name already exists
-def add_habit(name):
+# Create a new user with a salted, hashed password; return False if the username is taken
+def create_user(username, password):
+    salt = os.urandom(16)
+    password_hash = hashlib.pbkdf2_hmac(
+        "sha256", password.encode("utf-8"), salt, PASSWORD_ITERATIONS
+    )
+
     conn = get_connection()
     cursor = conn.cursor()
 
     try:
-        cursor.execute("INSERT INTO habits (name) VALUES (?)", (name,))
+        cursor.execute(
+            "INSERT INTO users (username, password_hash, salt) VALUES (?, ?, ?)",
+            (username, password_hash.hex(), salt.hex()),
+        )
+        conn.commit()
+        created = True
+    except sqlite3.IntegrityError:
+        created = False
+
+    conn.close()
+    return created
+
+
+# Return the user's id if the username and password are correct, else None
+def check_login(username, password):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT id, password_hash, salt FROM users WHERE username = ?",
+        (username,),
+    )
+    row = cursor.fetchone()
+
+    conn.commit()
+    conn.close()
+
+    if row is None:
+        return None
+
+    user_id, stored_hash, stored_salt = row
+    password_hash = hashlib.pbkdf2_hmac(
+        "sha256", password.encode("utf-8"), bytes.fromhex(stored_salt), PASSWORD_ITERATIONS
+    )
+
+    if hmac.compare_digest(password_hash.hex(), stored_hash):
+        return user_id
+    return None
+
+
+# Add a new habit for a user; return True if added, False if that user already has it
+def add_habit(user_id, name):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute(
+            "INSERT INTO habits (user_id, name) VALUES (?, ?)",
+            (user_id, name),
+        )
         conn.commit()
         added = True
     except sqlite3.IntegrityError:
@@ -61,12 +132,15 @@ def delete_habit(habit_id):
     conn.close()
 
 
-# Return a list of (id, name) for every habit, ordered by id
-def get_all_habits():
+# Return a list of (id, name) for every habit of one user, ordered by id
+def get_all_habits(user_id):
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT id, name FROM habits ORDER BY id")
+    cursor.execute(
+        "SELECT id, name FROM habits WHERE user_id = ? ORDER BY id",
+        (user_id,),
+    )
     habits = cursor.fetchall()
 
     conn.commit()
@@ -148,12 +222,17 @@ def get_streak(habit_id):
     return streak
 
 
-# Return how many habits were done on a date
-def get_count_for_date(date_str):
+# Return how many of one user's habits were done on a date
+def get_count_for_date(date_str, user_id):
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT COUNT(*) FROM logs WHERE date = ?", (date_str,))
+    cursor.execute(
+        "SELECT COUNT(*) FROM logs "
+        "JOIN habits ON habits.id = logs.habit_id "
+        "WHERE logs.date = ? AND habits.user_id = ?",
+        (date_str, user_id),
+    )
     count = cursor.fetchone()[0]
 
     conn.commit()
@@ -214,16 +293,16 @@ def get_completion_percent(habit_id, days=30):
     return round(done_days * 100 / days)
 
 
-# Return a list of the names of habits done on a date
-def get_habits_done_on(date_str):
+# Return a list of the names of one user's habits done on a date
+def get_habits_done_on(date_str, user_id):
     conn = get_connection()
     cursor = conn.cursor()
 
     cursor.execute(
         "SELECT habits.name FROM habits "
         "JOIN logs ON habits.id = logs.habit_id "
-        "WHERE logs.date = ? ORDER BY habits.id",
-        (date_str,),
+        "WHERE logs.date = ? AND habits.user_id = ? ORDER BY habits.id",
+        (date_str, user_id),
     )
     rows = cursor.fetchall()
 
@@ -236,8 +315,8 @@ def get_habits_done_on(date_str):
     return names
 
 
-# Write a CSV report with one row of stats per habit and return the filename
-def export_to_csv(filename="consistify_report.csv"):
+# Write a CSV report with one row of stats per habit of one user and return the filename
+def export_to_csv(user_id, filename="consistify_report.csv"):
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -251,7 +330,7 @@ def export_to_csv(filename="consistify_report.csv"):
             "Total Days Done",
         ])
 
-        for habit_id, name in get_all_habits():
+        for habit_id, name in get_all_habits(user_id):
             cursor.execute(
                 "SELECT COUNT(*) FROM logs WHERE habit_id = ?",
                 (habit_id,),
@@ -275,22 +354,18 @@ if __name__ == "__main__":
     create_tables()
     print("Tables created")
 
-    add_habit("Reading")
-    for habit_id, name in get_all_habits():
+    print(create_user("demo", "demo123"))
+    print(check_login("demo", "wrong password"))
+
+    user_id = check_login("demo", "demo123")
+    print(user_id)
+
+    add_habit(user_id, "Reading")
+    for habit_id, name in get_all_habits(user_id):
         if name == "Reading":
             reading_id = habit_id
 
-    today = date.today()
-    mark_done(reading_id, today.isoformat())
-    mark_done(reading_id, (today - timedelta(days=1)).isoformat())
-    mark_done(reading_id, (today - timedelta(days=2)).isoformat())
+    mark_done(reading_id, date.today().isoformat())
 
+    print(get_all_habits(user_id))
     print(get_streak(reading_id))
-    print(is_done(reading_id, today.isoformat()))
-    print(get_count_for_date(today.isoformat()))
-
-    print(get_best_streak(reading_id))
-    print(get_completion_percent(reading_id))
-    print(get_habits_done_on(today.isoformat()))
-
-    print(export_to_csv())
