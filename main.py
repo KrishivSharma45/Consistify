@@ -36,14 +36,19 @@ def show_page(build_function):
     build_function(app["window"])
 
 
-# Open the Welcome page; its "Get Started" button opens the Login page
+# Open the Welcome page; "Get Started" and "Sign Up" open Sign Up, "Log In" opens Log In
 def show_welcome():
-    show_page(lambda parent: welcome.build_welcome_page(parent, show_login))
+    show_page(lambda parent: welcome.build_welcome_page(parent, show_signup, show_login, show_signup))
 
 
-# Open the Login page; a correct login calls on_login
+# Open the auth page in Log In mode; a correct login calls on_login
 def show_login():
-    show_page(lambda parent: auth.build_auth_page(parent, on_login))
+    show_page(lambda parent: auth.build_auth_page(parent, on_login, "login"))
+
+
+# Open the auth page in Sign Up mode
+def show_signup():
+    show_page(lambda parent: auth.build_auth_page(parent, on_login, "signup"))
 
 
 # Remember who logged in, then open the Dashboard

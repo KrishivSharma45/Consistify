@@ -107,7 +107,7 @@ def on_submit(page, on_login_success):
 
 
 # Build the login/signup card in the middle of the parent frame and return the card
-def build_auth_page(parent, on_login_success):
+def build_auth_page(parent, on_login_success, start_mode="login"):
     card = tk.Frame(
         parent,
         bg=ENTRY_BG,
@@ -164,7 +164,7 @@ def build_auth_page(parent, on_login_success):
     for entry in (username_entry, password_entry, confirm_entry):
         entry.bind("<Return>", lambda event: on_submit(page, on_login_success))
 
-    set_mode(page, "login")
+    set_mode(page, start_mode)
     username_entry.focus_set()
     return card
 
