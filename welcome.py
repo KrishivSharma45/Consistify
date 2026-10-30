@@ -11,7 +11,7 @@ import sys
 
 # Colors for this page: change them here and the whole page follows
 BACKGROUND = "#3E2723"     # page background (dark brown)
-GRID_LINE = "#000000"      # the grid lines on the background (black)
+GRID_LINE = "#241614"      # the grid lines on the background (a blackish brown, softer than pure black)
 PINK = "#E38792"           # main text color and buttons
 PINK_HOVER = "#cc6f7b"     # slightly deeper pink under the mouse, so the change is visible
 HIGHLIGHT = "#fff8f0"      # highlighted words (a warm white)
