@@ -11,8 +11,10 @@ import sys
 
 # Import the app's shared colors and font
 import theme
+# Import our reusable widgets (the rounded buttons)
+import ui
 
-NAVBAR_HEIGHT = 64
+NAVBAR_HEIGHT = 56
 GRID_SIZE = 32       # size of one square of the background grid (pixels)
 HERO_TOP = 36        # space between the navbar and the pill badge at the top of the hero
 
@@ -69,46 +71,82 @@ def draw_mixed_text(canvas, x, y, parts, font, anchor="center", tags=""):
     return total_width
 
 
-# Recolor a button's border, background and text (used by the hover effect)
-def paint_button(border, label, colors):
-    border_color, background, text_color = colors
-    border.config(bg=border_color)
-    label.config(bg=background, fg=text_color)
-
-
-# Create a button from a Label inside a 1-pixel frame, so we can choose the border color
-def create_button(parent, text, filled, command, font_size=11):
-    if filled:
-        normal = (theme.ACCENT, theme.ACCENT, theme.BG)
-        hover = (theme.ACCENT_HOVER, theme.ACCENT_HOVER, theme.BG)
+# Highlight a navbar link (accent color + its underline showing) or set it back to normal
+def paint_link(navbar, link, highlighted):
+    if highlighted:
+        navbar.itemconfig(link["text"], fill=theme.ACCENT)
+        navbar.itemconfig(link["underline"], state="normal")
     else:
-        # The outlined button sits on the navbar, so its inside matches the navbar color
-        normal = (theme.TEXT, theme.CARD, theme.TEXT)
-        hover = (theme.ACCENT, theme.CARD, theme.ACCENT)
-
-    border = tk.Frame(parent)
-    label = tk.Label(border, text=text, font=(theme.FONT, font_size, "bold"), padx=18, pady=6, cursor="hand2")
-    label.pack(padx=1, pady=1)
-    paint_button(border, label, normal)
-
-    label.bind("<Button-1>", lambda event: command())
-    label.bind("<Enter>", lambda event: paint_button(border, label, hover))
-    label.bind("<Leave>", lambda event: paint_button(border, label, normal))
-    return border
+        navbar.itemconfig(link["text"], fill=theme.TEXT)
+        navbar.itemconfig(link["underline"], state="hidden")
 
 
-# Change a canvas text item's color and the mouse pointer (used by the navbar hover effect)
-def hover_text(canvas, item, color, cursor):
-    canvas.itemconfig(item, fill=color)
-    canvas.config(cursor=cursor)
+# The mouse moved onto a link: highlight it and show the hand pointer
+def on_link_enter(navbar, state, name):
+    navbar.config(cursor="hand2")
+    paint_link(navbar, state["links"][name], True)
 
 
-# Draw a text link on the navbar that turns the accent color under the mouse and runs command when clicked
-def draw_link(canvas, x, y, text, anchor, command):
-    item = canvas.create_text(x, y, text=text, fill=theme.TEXT, font=(theme.FONT, 11), anchor=anchor)
-    canvas.tag_bind(item, "<Button-1>", lambda event: command())
-    canvas.tag_bind(item, "<Enter>", lambda event: hover_text(canvas, item, theme.ACCENT, "hand2"))
-    canvas.tag_bind(item, "<Leave>", lambda event: hover_text(canvas, item, theme.TEXT, ""))
+# The mouse left a link: keep it highlighted only if its section is the one in view
+def on_link_leave(navbar, state, name):
+    navbar.config(cursor="")
+    paint_link(navbar, state["links"][name], state["active_section"] == name)
+
+
+# Draw a navbar link with a hidden 2px underline just below it, and remember both in state["links"]
+def draw_link(navbar, state, x, y, text, anchor, name, command):
+    item = navbar.create_text(x, y, text=text, fill=theme.TEXT, font=(theme.FONT, 11), anchor=anchor)
+    # bbox gives the text's (left, top, right, bottom); the underline goes 2 pixels under the bottom
+    left, top, right, bottom = navbar.bbox(item)
+    underline = navbar.create_line(left, bottom + 2, right, bottom + 2, fill=theme.ACCENT, width=2, state="hidden")
+
+    for part in (item, underline):
+        navbar.tag_bind(part, "<Button-1>", lambda event: command())
+        navbar.tag_bind(part, "<Enter>", lambda event: on_link_enter(navbar, state, name))
+        navbar.tag_bind(part, "<Leave>", lambda event: on_link_leave(navbar, state, name))
+
+    state["links"][name] = {"text": item, "underline": underline}
+    paint_link(navbar, state["links"][name], state["active_section"] == name)
+
+
+# Called by the canvas whenever the visible part of the page changes; highlights the link of the section in view
+def on_page_scroll(navbar, canvas, state, first, last):
+    if not navbar.winfo_exists():
+        return
+
+    # first is how far down the page the top of the view is, as a fraction (0 = top, 1 = bottom)
+    view_top = float(first) * state["page_height"]
+    # A section counts as "in view" once its top passes a line one third of the way down the screen
+    reading_line = view_top + canvas.winfo_height() / 3
+
+    active = None
+    sections = state["sections"]
+    if "features" in sections and reading_line >= sections["features"] - SCROLL_MARGIN:
+        active = "features"
+    elif "about" in sections and reading_line >= sections["about"] - SCROLL_MARGIN:
+        active = "about"
+
+    # Only repaint when the section in view actually changes
+    if active != state["active_section"]:
+        state["active_section"] = active
+        for name in state["links"]:
+            paint_link(navbar, state["links"][name], name == active)
+
+
+# Draw the logo: a tiny 2x2 grid of heatmap squares, then "Consistify"
+def draw_logo(navbar, state, x, middle_y):
+    square = 8
+    gap = 2
+    top = middle_y - square - gap / 2
+    shades = [theme.HEATMAP[2], theme.HEATMAP[4], theme.HEATMAP[1], theme.HEATMAP[3]]
+    for i in range(4):
+        # i // 2 is the row (0, 0, 1, 1) and i % 2 is the column (0, 1, 0, 1)
+        left = x + (i % 2) * (square + gap)
+        y1 = top + (i // 2) * (square + gap)
+        navbar.create_rectangle(left, y1, left + square, y1 + square, fill=shades[i], outline="", tags="logo")
+
+    text_x = x + 2 * square + gap + 10
+    draw_mixed_text(navbar, text_x, middle_y, [("Consist", theme.ACCENT), ("ify", theme.TEXT)], state["fonts"]["logo"], anchor="w", tags="logo")
 
 
 # Scroll the page with the mouse wheel (Windows sends steps of 120, a Mac sends small numbers)
@@ -452,14 +490,14 @@ def draw_navbar(navbar, canvas, state, event):
     draw_grid(navbar, width, NAVBAR_HEIGHT)
 
     # Clicking the logo scrolls back to the top
-    draw_mixed_text(navbar, 30, middle_y, [("Consist", theme.ACCENT), ("ify", theme.TEXT)], state["fonts"]["logo"], anchor="w", tags="logo")
+    draw_logo(navbar, state, 30, middle_y)
     navbar.tag_bind("logo", "<Button-1>", lambda event: scroll_to_section(canvas, state, "hero"))
     navbar.tag_bind("logo", "<Enter>", lambda event: navbar.config(cursor="hand2"))
     navbar.tag_bind("logo", "<Leave>", lambda event: navbar.config(cursor=""))
 
     # "About" ends just left of the middle and "Features" starts just right of it
-    draw_link(navbar, width / 2 - 14, middle_y, "About", "e", lambda: scroll_to_section(canvas, state, "about"))
-    draw_link(navbar, width / 2 + 14, middle_y, "Features", "w", lambda: scroll_to_section(canvas, state, "features"))
+    draw_link(navbar, state, width / 2 - 16, middle_y, "About", "e", "about", lambda: scroll_to_section(canvas, state, "about"))
+    draw_link(navbar, state, width / 2 + 16, middle_y, "Features", "w", "features", lambda: scroll_to_section(canvas, state, "features"))
 
     signup = state["signup_button"]
     navbar.create_window(width - 30, middle_y, window=signup, anchor="e")
@@ -493,9 +531,13 @@ def build_welcome_page(parent, on_get_started, on_login, on_signup):
             "badge": tkfont.Font(family=theme.FONT, size=10),
             "typewriter": tkfont.Font(family=theme.FONT, size=14),
         },
-        "get_started": create_button(canvas, "Get Started →", True, on_get_started, font_size=14),
-        "login_button": create_button(navbar, "Log In", False, on_login),
-        "signup_button": create_button(navbar, "Sign Up", True, on_signup),
+        "get_started": ui.rounded_button(canvas, "Get Started →", on_get_started, "filled", width=230, height=54, radius=12, font_size=14),
+        # No width/height given, so these two size themselves to their text
+        "login_button": ui.rounded_button(navbar, "Log in", on_login, "ghost", radius=8, font_size=10),
+        "signup_button": ui.rounded_button(navbar, "Sign up", on_signup, "filled", radius=8, font_size=10),
+        # The navbar links, and which section is in view right now (None while the hero is showing)
+        "links": {},
+        "active_section": None,
         "sections": {"hero": 0},
         "page_height": 1,
         "angle": 0,
@@ -510,6 +552,9 @@ def build_welcome_page(parent, on_get_started, on_login, on_signup):
 
     # bind_all catches the wheel anywhere in the window
     canvas.bind_all("<MouseWheel>", lambda event: on_mouse_wheel(canvas, event))
+
+    # The canvas calls yscrollcommand every time its view moves: wheel, smooth scroll or resize
+    canvas.configure(yscrollcommand=lambda first, last: on_page_scroll(navbar, canvas, state, first, last))
 
     animate_orbit(canvas, state)
     # Start typing a little later, once the page has been drawn and "typed_item" exists
