@@ -3,32 +3,25 @@ import tkinter as tk
 
 # Import our own database.py so we can create users and check logins
 import database
-
-# Theme colors, the same values gui.py uses, plus a red for error messages
-BG_COLOR = "#0d1117"       # dark background
-TEXT_COLOR = "#e6edf3"     # light text
-ACCENT_COLOR = "#39d353"   # green accent
-ENTRY_BG = "#161b22"       # slightly lighter dark, used for the card
-BORDER_COLOR = "#30363d"   # soft grey border around the card
-MUTED_COLOR = "#8b949e"    # grey for small labels
-ERROR_COLOR = "#f85149"    # red for error messages
+# Import the app's shared colors and font
+import theme
 
 
 # Create a small grey label above an entry box, and the entry box itself
 def create_field(card, label_text, hide_text=False):
-    field_frame = tk.Frame(card, bg=ENTRY_BG)
+    field_frame = tk.Frame(card, bg=theme.CARD)
     field_frame.pack(fill="x", pady=(0, 12))
 
-    label = tk.Label(field_frame, text=label_text, font=("Segoe UI", 10), fg=MUTED_COLOR, bg=ENTRY_BG)
+    label = tk.Label(field_frame, text=label_text, font=(theme.FONT, 10), fg=theme.MUTED, bg=theme.CARD)
     label.pack(anchor="w")
 
     entry = tk.Entry(
         field_frame,
         width=32,
-        font=("Segoe UI", 12),
-        bg=BG_COLOR,
-        fg=TEXT_COLOR,
-        insertbackground=TEXT_COLOR,
+        font=(theme.FONT, 12),
+        bg=theme.BG,
+        fg=theme.TEXT,
+        insertbackground=theme.TEXT,
         relief="flat",
     )
     if hide_text:
@@ -38,7 +31,7 @@ def create_field(card, label_text, hide_text=False):
     return field_frame, entry
 
 
-# Show a message on the card in the given color (red for errors, green for success)
+# Show a message on the card in the given color (theme.ERROR for errors, theme.SUCCESS for success)
 def show_message(page, text, color):
     page["message_label"].config(text=text, fg=color)
 
@@ -46,7 +39,7 @@ def show_message(page, text, color):
 # Switch the card between "login" and "signup" mode by changing texts and showing or hiding Confirm Password
 def set_mode(page, mode):
     page["mode"] = mode
-    show_message(page, "", ERROR_COLOR)
+    show_message(page, "", theme.ERROR)
     page["password_entry"].delete(0, tk.END)
     page["confirm_entry"].delete(0, tk.END)
 
@@ -76,33 +69,33 @@ def on_submit(page, on_login_success):
 
     if page["mode"] == "login":
         if username == "" or password == "":
-            show_message(page, "Please fill in all fields", ERROR_COLOR)
+            show_message(page, "Please fill in all fields", theme.ERROR)
             return
 
         user_id = database.check_login(username, password)
         if user_id is None:
-            show_message(page, "Incorrect username or password", ERROR_COLOR)
+            show_message(page, "Incorrect username or password", theme.ERROR)
             return
 
-        show_message(page, "", ERROR_COLOR)
+        show_message(page, "", theme.ERROR)
         on_login_success(user_id, username)
 
     else:
         if username == "" or password == "" or confirm == "":
-            show_message(page, "Please fill in all fields", ERROR_COLOR)
+            show_message(page, "Please fill in all fields", theme.ERROR)
             return
         if len(password) < 6:
-            show_message(page, "Password must be at least 6 characters", ERROR_COLOR)
+            show_message(page, "Password must be at least 6 characters", theme.ERROR)
             return
         if password != confirm:
-            show_message(page, "Passwords do not match", ERROR_COLOR)
+            show_message(page, "Passwords do not match", theme.ERROR)
             return
         if not database.create_user(username, password):
-            show_message(page, "Username already taken", ERROR_COLOR)
+            show_message(page, "Username already taken", theme.ERROR)
             return
 
         set_mode(page, "login")
-        show_message(page, "Account created! Please log in.", ACCENT_COLOR)
+        show_message(page, "Account created! Please log in.", theme.SUCCESS)
         page["password_entry"].focus_set()
 
 
@@ -110,8 +103,8 @@ def on_submit(page, on_login_success):
 def build_auth_page(parent, on_login_success, start_mode="login"):
     card = tk.Frame(
         parent,
-        bg=ENTRY_BG,
-        highlightbackground=BORDER_COLOR,
+        bg=theme.CARD,
+        highlightbackground=theme.BORDER,
         highlightthickness=1,
         padx=40,
         pady=30,
@@ -119,10 +112,10 @@ def build_auth_page(parent, on_login_success, start_mode="login"):
     # relx/rely 0.5 = the middle of the parent; anchor="center" puts the card's middle there
     card.place(relx=0.5, rely=0.5, anchor="center")
 
-    title_label = tk.Label(card, text="Consistify", font=("Segoe UI", 26, "bold"), fg=ACCENT_COLOR, bg=ENTRY_BG)
+    title_label = tk.Label(card, text="Consistify", font=(theme.FONT, 26, "bold"), fg=theme.ACCENT, bg=theme.CARD)
     title_label.pack()
 
-    subtitle_label = tk.Label(card, text="Build habits that stick", font=("Segoe UI", 11), fg=TEXT_COLOR, bg=ENTRY_BG)
+    subtitle_label = tk.Label(card, text="Build habits that stick", font=(theme.FONT, 11), fg=theme.TEXT, bg=theme.CARD)
     subtitle_label.pack(pady=(0, 20))
 
     username_frame, username_entry = create_field(card, "Username")
@@ -130,21 +123,21 @@ def build_auth_page(parent, on_login_success, start_mode="login"):
     confirm_frame, confirm_entry = create_field(card, "Confirm Password", hide_text=True)
 
     # wraplength stops a long message from making the card wider
-    message_label = tk.Label(card, text="", font=("Segoe UI", 10), bg=ENTRY_BG, wraplength=300)
+    message_label = tk.Label(card, text="", font=(theme.FONT, 10), bg=theme.CARD, wraplength=300)
     message_label.pack(pady=(0, 8))
 
     submit_button = tk.Button(
         card,
-        font=("Segoe UI", 12, "bold"),
-        bg=ACCENT_COLOR,
-        fg=BG_COLOR,
-        activebackground=ACCENT_COLOR,
+        font=(theme.FONT, 12, "bold"),
+        bg=theme.ACCENT,
+        fg=theme.BG,
+        activebackground=theme.ACCENT,
         relief="flat",
         pady=8,
     )
     submit_button.pack(fill="x")
 
-    switch_link = tk.Label(card, font=("Segoe UI", 10, "underline"), fg=ACCENT_COLOR, bg=ENTRY_BG, cursor="hand2")
+    switch_link = tk.Label(card, font=(theme.FONT, 10, "underline"), fg=theme.ACCENT, bg=theme.CARD, cursor="hand2")
     switch_link.pack(pady=(15, 0))
 
     # One dictionary that holds the current mode and every widget the other functions need
@@ -181,7 +174,7 @@ if __name__ == "__main__":
     window = tk.Tk()
     window.title("Consistify - Login")
     window.geometry("1300x700")
-    window.configure(bg=BG_COLOR)
+    window.configure(bg=theme.BG)
 
     build_auth_page(window, print_login)
     window.mainloop()

@@ -2,6 +2,8 @@ import tkinter as tk
 from datetime import date, timedelta
 
 import database
+# Import the app's shared colors and font
+import theme
 
 # Size settings for the heatmap (in pixels)
 SQUARE_SIZE = 14
@@ -10,27 +12,19 @@ NUMBER_OF_DAYS = 90
 LEFT_MARGIN = 30
 TOP_MARGIN = 20
 
-# Theme colors, the same values the rest of the team uses
-BG_COLOR = "#0d1117"
-TEXT_COLOR = "#e6edf3"
-MUTED_COLOR = "#8b949e"
-ACCENT_COLOR = "#39d353"
-CARD_BG = "#161b22"
-BORDER_COLOR = "#30363d"
 
-
-# Return the color for a given number of habits done in one day
+# Return the color for a given number of habits done in one day (theme.HEATMAP holds the 5 shades)
 def get_color(count):
     if count == 0:
-        return "#161b22"
+        return theme.HEATMAP[0]
     elif count == 1:
-        return "#0e4429"
+        return theme.HEATMAP[1]
     elif count == 2:
-        return "#006d32"
+        return theme.HEATMAP[2]
     elif count == 3:
-        return "#26a641"
+        return theme.HEATMAP[3]
     else:
-        return "#39d353"
+        return theme.HEATMAP[4]
 
 
 # Show the clicked day's date, count and the names of the habits done that day
@@ -68,7 +62,7 @@ def get_square_position(day, first_day):
 def draw_weekday_labels(canvas):
     for row, name in [(0, "Mon"), (2, "Wed"), (4, "Fri")]:
         middle = TOP_MARGIN + row * (SQUARE_SIZE + GAP) + SQUARE_SIZE / 2
-        canvas.create_text(0, middle, text=name, fill=MUTED_COLOR, font=("Arial", 9), anchor="w")
+        canvas.create_text(0, middle, text=name, fill=theme.MUTED, font=("Arial", 9), anchor="w")
 
 
 # Draw the "Less [5 color boxes] More" legend under the grid
@@ -76,14 +70,14 @@ def draw_legend(canvas):
     top = TOP_MARGIN + 7 * (SQUARE_SIZE + GAP) + 10
     middle = top + SQUARE_SIZE / 2
 
-    canvas.create_text(LEFT_MARGIN, middle, text="Less", fill=MUTED_COLOR, font=("Arial", 9), anchor="w")
+    canvas.create_text(LEFT_MARGIN, middle, text="Less", fill=theme.MUTED, font=("Arial", 9), anchor="w")
 
     for level in range(5):
         x1 = LEFT_MARGIN + 30 + level * (SQUARE_SIZE + GAP)
         canvas.create_rectangle(x1, top, x1 + SQUARE_SIZE, top + SQUARE_SIZE, fill=get_color(level), outline="")
 
     more_x = LEFT_MARGIN + 30 + 5 * (SQUARE_SIZE + GAP) + 3
-    canvas.create_text(more_x, middle, text="More", fill=MUTED_COLOR, font=("Arial", 9), anchor="w")
+    canvas.create_text(more_x, middle, text="More", fill=theme.MUTED, font=("Arial", 9), anchor="w")
 
 
 # Draw one clickable square per day for the last 90 days, one row per weekday
@@ -102,7 +96,7 @@ def draw_heatmap(canvas, counts, info_label, user_id):
 
         # Give today's square a light border so it is easy to find
         if day == today:
-            border = TEXT_COLOR
+            border = theme.TEXT
         else:
             border = ""
 
@@ -113,7 +107,7 @@ def draw_heatmap(canvas, counts, info_label, user_id):
 
         # On the 1st of a month, write the month name ("Sep", "Oct") above that column
         if day.day == 1:
-            canvas.create_text(x1, TOP_MARGIN - 10, text=day.strftime("%b"), fill=MUTED_COLOR, font=("Arial", 9), anchor="w")
+            canvas.create_text(x1, TOP_MARGIN - 10, text=day.strftime("%b"), fill=theme.MUTED, font=("Arial", 9), anchor="w")
 
     draw_weekday_labels(canvas)
     draw_legend(canvas)
@@ -141,18 +135,18 @@ def refresh_heatmap(canvas, info_label, user_id):
 
 # Build the whole heatmap section (title, grid, info label) for one user inside any window or frame
 def create_heatmap_section(parent, user_id):
-    section = tk.Frame(parent, bg=BG_COLOR)
+    section = tk.Frame(parent, bg=theme.BG)
     section.pack(pady=10)
 
-    title_label = tk.Label(section, text="Last 90 days", bg=BG_COLOR, fg=TEXT_COLOR, font=("Arial", 12, "bold"))
+    title_label = tk.Label(section, text="Last 90 days", bg=theme.BG, fg=theme.TEXT, font=("Arial", 12, "bold"))
     title_label.pack(anchor="w")
 
     # 280 x 180 fits the weekday labels, up to 14 week columns, the month labels and the legend
-    canvas = tk.Canvas(section, width=280, height=180, bg=BG_COLOR, highlightthickness=0)
+    canvas = tk.Canvas(section, width=280, height=180, bg=theme.BG, highlightthickness=0)
     canvas.pack()
 
     # wraplength=260 moves long text onto a new line instead of stretching the window
-    info_label = tk.Label(section, text="Click a square to see details", bg=BG_COLOR, fg=TEXT_COLOR, font=("Arial", 10), wraplength=260)
+    info_label = tk.Label(section, text="Click a square to see details", bg=theme.BG, fg=theme.TEXT, font=("Arial", 10), wraplength=260)
     info_label.pack()
 
     refresh_heatmap(canvas, info_label, user_id)
@@ -168,25 +162,25 @@ def day_text(number):
 
 # Build a table with each habit's current streak, best streak and 30-day completion %
 def create_stats_section(parent, user_id):
-    section = tk.Frame(parent, bg=CARD_BG, highlightbackground=BORDER_COLOR, highlightthickness=1, padx=20, pady=15)
+    section = tk.Frame(parent, bg=theme.CARD, highlightbackground=theme.BORDER, highlightthickness=1, padx=20, pady=15)
     section.pack(fill="x", pady=(15, 0))
 
-    title_label = tk.Label(section, text="Stats", bg=CARD_BG, fg=TEXT_COLOR, font=("Arial", 12, "bold"))
+    title_label = tk.Label(section, text="Stats", bg=theme.CARD, fg=theme.TEXT, font=("Arial", 12, "bold"))
     title_label.pack(anchor="w", pady=(0, 8))
 
     habits = database.get_all_habits(user_id)
     if len(habits) == 0:
-        empty_label = tk.Label(section, text="No habits yet. Add some on the Today tab.", bg=CARD_BG, fg=MUTED_COLOR, font=("Arial", 10))
+        empty_label = tk.Label(section, text="No habits yet. Add some on the Today tab.", bg=theme.CARD, fg=theme.MUTED, font=("Arial", 10))
         empty_label.pack(anchor="w")
         return section
 
     # A grid of labels: row 0 holds the headings, then one row per habit
-    table = tk.Frame(section, bg=CARD_BG)
+    table = tk.Frame(section, bg=theme.CARD)
     table.pack(anchor="w")
 
     headings = ["Habit", "Current streak", "Best streak", "Last 30 days"]
     for column in range(len(headings)):
-        heading_label = tk.Label(table, text=headings[column], bg=CARD_BG, fg=MUTED_COLOR, font=("Arial", 9, "bold"))
+        heading_label = tk.Label(table, text=headings[column], bg=theme.CARD, fg=theme.MUTED, font=("Arial", 9, "bold"))
         heading_label.grid(row=0, column=column, sticky="w", padx=(0, 30), pady=(0, 6))
 
     row = 1
@@ -198,12 +192,12 @@ def create_stats_section(parent, user_id):
             str(database.get_completion_percent(habit_id)) + "%",
         ]
         for column in range(len(values)):
-            # The percent column is green so it stands out
+            # The percent column is in the accent color so it stands out
             if column == 3:
-                color = ACCENT_COLOR
+                color = theme.ACCENT
             else:
-                color = TEXT_COLOR
-            value_label = tk.Label(table, text=values[column], bg=CARD_BG, fg=color, font=("Arial", 10))
+                color = theme.TEXT
+            value_label = tk.Label(table, text=values[column], bg=theme.CARD, fg=color, font=("Arial", 10))
             value_label.grid(row=row, column=column, sticky="w", padx=(0, 30), pady=2)
         row = row + 1
 
@@ -219,7 +213,7 @@ if __name__ == "__main__":
 
     window = tk.Tk()
     window.title("Consistify - Heatmap")
-    window.configure(bg=BG_COLOR, padx=20, pady=20)
+    window.configure(bg=theme.BG, padx=20, pady=20)
 
     canvas, info_label = create_heatmap_section(window, user_id)
     create_stats_section(window, user_id)

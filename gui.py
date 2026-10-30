@@ -9,13 +9,8 @@ from datetime import date
 
 # Import our own database.py so we can save and load habits
 import database
-
-# Theme colors, stored once at the top so every widget uses the same values
-BG_COLOR = "#0d1117"       # dark background
-TEXT_COLOR = "#e6edf3"     # light text
-ACCENT_COLOR = "#39d353"   # green accent
-ENTRY_BG = "#161b22"       # slightly lighter dark, so the Entry box is visible
-BORDER_COLOR = "#30363d"   # soft grey border for the habit list area
+# Import the app's shared colors and font
+import theme
 
 
 # Create the main window, give it a title, a size, and a dark background
@@ -23,7 +18,7 @@ def create_window():
     window = tk.Tk()
     window.title("Consistify")
     window.geometry("900x600")
-    window.configure(bg=BG_COLOR)
+    window.configure(bg=theme.BG)
     return window
 
 
@@ -32,34 +27,34 @@ def create_header(window):
     title_label = tk.Label(
         window,
         text="Consistify",
-        font=("Segoe UI", 28, "bold"),
-        fg=ACCENT_COLOR,
-        bg=BG_COLOR,
+        font=(theme.FONT, 28, "bold"),
+        fg=theme.ACCENT,
+        bg=theme.BG,
     )
     title_label.pack(pady=(30, 0))
 
     subtitle_label = tk.Label(
         window,
         text="Build habits that stick",
-        font=("Segoe UI", 12),
-        fg=TEXT_COLOR,
-        bg=BG_COLOR,
+        font=(theme.FONT, 12),
+        fg=theme.TEXT,
+        bg=theme.BG,
     )
     subtitle_label.pack(pady=(5, 20))
 
 
 # Create one row holding the text box, the "Add Habit" button and the "Export CSV" button side by side
 def create_input_row(window, user_id):
-    input_frame = tk.Frame(window, bg=BG_COLOR)
+    input_frame = tk.Frame(window, bg=theme.BG)
     input_frame.pack(pady=10)
 
     habit_entry = tk.Entry(
         input_frame,
         width=40,
-        font=("Segoe UI", 12),
-        bg=ENTRY_BG,
-        fg=TEXT_COLOR,
-        insertbackground=TEXT_COLOR,
+        font=(theme.FONT, 12),
+        bg=theme.CARD,
+        fg=theme.TEXT,
+        insertbackground=theme.TEXT,
         relief="flat",
     )
     habit_entry.pack(side="left", padx=(0, 10), ipady=6)
@@ -67,10 +62,10 @@ def create_input_row(window, user_id):
     add_button = tk.Button(
         input_frame,
         text="Add Habit",
-        font=("Segoe UI", 11, "bold"),
-        bg=ACCENT_COLOR,
-        fg=BG_COLOR,
-        activebackground=ACCENT_COLOR,
+        font=(theme.FONT, 11, "bold"),
+        bg=theme.ACCENT,
+        fg=theme.BG,
+        activebackground=theme.ACCENT,
         relief="flat",
         padx=15,
         pady=5,
@@ -80,11 +75,11 @@ def create_input_row(window, user_id):
     export_button = tk.Button(
         input_frame,
         text="Export CSV",
-        font=("Segoe UI", 11, "bold"),
-        bg=ENTRY_BG,
-        fg=ACCENT_COLOR,
-        activebackground=BORDER_COLOR,
-        activeforeground=ACCENT_COLOR,
+        font=(theme.FONT, 11, "bold"),
+        bg=theme.CARD,
+        fg=theme.ACCENT,
+        activebackground=theme.BORDER,
+        activeforeground=theme.ACCENT,
         relief="flat",
         padx=15,
         pady=5,
@@ -99,8 +94,8 @@ def create_input_row(window, user_id):
 def create_habit_list_area(window):
     habit_list_frame = tk.Frame(
         window,
-        bg=BG_COLOR,
-        highlightbackground=BORDER_COLOR,
+        bg=theme.BG,
+        highlightbackground=theme.BORDER,
         highlightthickness=1,
     )
     habit_list_frame.pack(fill="both", expand=True, padx=40, pady=20)
@@ -115,18 +110,18 @@ def refresh_habit_list(habit_list_frame, user_id, on_change=None):
     today = date.today().isoformat()
 
     for habit_id, name in database.get_all_habits(user_id):
-        row_frame = tk.Frame(habit_list_frame, bg=BG_COLOR)
+        row_frame = tk.Frame(habit_list_frame, bg=theme.BG)
         row_frame.pack(fill="x", padx=15, pady=5)
 
         done_var = tk.BooleanVar(value=database.is_done(habit_id, today))
         done_checkbox = tk.Checkbutton(
             row_frame,
             variable=done_var,
-            bg=BG_COLOR,
-            fg=TEXT_COLOR,
-            selectcolor=ENTRY_BG,
-            activebackground=BG_COLOR,
-            activeforeground=TEXT_COLOR,
+            bg=theme.BG,
+            fg=theme.TEXT,
+            selectcolor=theme.CARD,
+            activebackground=theme.BG,
+            activeforeground=theme.TEXT,
             highlightthickness=0,
             command=lambda habit_id=habit_id, done_var=done_var: on_check_click(
                 habit_id, done_var, habit_list_frame, user_id, on_change
@@ -137,29 +132,29 @@ def refresh_habit_list(habit_list_frame, user_id, on_change=None):
         name_label = tk.Label(
             row_frame,
             text=name,
-            font=("Segoe UI", 12),
-            fg=TEXT_COLOR,
-            bg=BG_COLOR,
+            font=(theme.FONT, 12),
+            fg=theme.TEXT,
+            bg=theme.BG,
         )
         name_label.pack(side="left")
 
         streak_label = tk.Label(
             row_frame,
             text="🔥 " + str(database.get_streak(habit_id)) + " day streak",
-            font=("Segoe UI", 10),
-            fg=ACCENT_COLOR,
-            bg=BG_COLOR,
+            font=(theme.FONT, 10),
+            fg=theme.ACCENT,
+            bg=theme.BG,
         )
         streak_label.pack(side="left", padx=(15, 0))
 
         delete_button = tk.Button(
             row_frame,
             text="Delete",
-            font=("Segoe UI", 9),
-            bg=ENTRY_BG,
-            fg=TEXT_COLOR,
-            activebackground=BORDER_COLOR,
-            activeforeground=TEXT_COLOR,
+            font=(theme.FONT, 9),
+            bg=theme.CARD,
+            fg=theme.TEXT,
+            activebackground=theme.BORDER,
+            activeforeground=theme.TEXT,
             relief="flat",
             padx=8,
             command=lambda habit_id=habit_id: on_delete_click(habit_id, habit_list_frame, user_id, on_change),

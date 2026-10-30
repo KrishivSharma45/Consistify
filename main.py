@@ -6,14 +6,8 @@ import auth
 import database
 import gui
 import heatmap
+import theme
 import welcome
-
-# Theme colors, the same values the rest of the app uses
-BG_COLOR = "#0d1117"       # dark background
-SIDEBAR_BG = "#161b22"     # slightly lighter dark for the sidebar
-TEXT_COLOR = "#e6edf3"     # light text
-ACCENT_COLOR = "#39d353"   # green accent
-ACTIVE_BG = "#30363d"      # grey behind the highlighted sidebar button
 
 WINDOW_WIDTH = 1100
 WINDOW_HEIGHT = 700
@@ -70,11 +64,11 @@ def create_sidebar_button(sidebar, text, command):
     button = tk.Button(
         sidebar,
         text=text,
-        font=("Segoe UI", 11),
-        bg=SIDEBAR_BG,
-        fg=TEXT_COLOR,
-        activebackground=ACTIVE_BG,
-        activeforeground=TEXT_COLOR,
+        font=(theme.FONT, 11),
+        bg=theme.CARD,
+        fg=theme.TEXT,
+        activebackground=theme.BORDER,
+        activeforeground=theme.TEXT,
         relief="flat",
         anchor="w",
         padx=20,
@@ -89,9 +83,9 @@ def create_sidebar_button(sidebar, text, command):
 def show_tab(tab_name, content, buttons):
     for name, button in buttons.items():
         if name == tab_name:
-            button.config(bg=ACTIVE_BG, fg=ACCENT_COLOR)
+            button.config(bg=theme.BORDER, fg=theme.ACCENT)
         else:
-            button.config(bg=SIDEBAR_BG, fg=TEXT_COLOR)
+            button.config(bg=theme.CARD, fg=theme.TEXT)
 
     for child in content.winfo_children():
         child.destroy()
@@ -99,7 +93,7 @@ def show_tab(tab_name, content, buttons):
     if tab_name == "today":
         gui.create_habit_section(content, app["user_id"])
     else:
-        heatmap_holder = tk.Frame(content, bg=BG_COLOR)
+        heatmap_holder = tk.Frame(content, bg=theme.BG)
         heatmap_holder.pack(pady=40)
         heatmap.create_heatmap_section(heatmap_holder, app["user_id"])
         heatmap.create_stats_section(heatmap_holder, app["user_id"])
@@ -107,18 +101,18 @@ def show_tab(tab_name, content, buttons):
 
 # Build the Dashboard: a sidebar on the left and a content area on the right
 def build_dashboard(parent):
-    sidebar = tk.Frame(parent, bg=SIDEBAR_BG, width=200)
+    sidebar = tk.Frame(parent, bg=theme.CARD, width=200)
     sidebar.pack(side="left", fill="y")
     # Without this, the sidebar would shrink or grow to fit its buttons instead of staying 200px wide
     sidebar.pack_propagate(False)
 
-    content = tk.Frame(parent, bg=BG_COLOR)
+    content = tk.Frame(parent, bg=theme.BG)
     content.pack(side="right", fill="both", expand=True)
 
-    title_label = tk.Label(sidebar, text="Consistify", font=("Segoe UI", 18, "bold"), fg=ACCENT_COLOR, bg=SIDEBAR_BG)
+    title_label = tk.Label(sidebar, text="Consistify", font=(theme.FONT, 18, "bold"), fg=theme.ACCENT, bg=theme.CARD)
     title_label.pack(anchor="w", padx=20, pady=(25, 0))
 
-    hello_label = tk.Label(sidebar, text="Hi, " + app["username"] + " 👋", font=("Segoe UI", 11), fg=TEXT_COLOR, bg=SIDEBAR_BG)
+    hello_label = tk.Label(sidebar, text="Hi, " + app["username"] + " 👋", font=(theme.FONT, 11), fg=theme.TEXT, bg=theme.CARD)
     hello_label.pack(anchor="w", padx=20, pady=(0, 25))
 
     buttons = {}
@@ -139,7 +133,7 @@ if __name__ == "__main__":
 
     app["window"] = tk.Tk()
     app["window"].title("Consistify")
-    app["window"].configure(bg=BG_COLOR)
+    app["window"].configure(bg=theme.BG)
     center_window(app["window"])
 
     show_welcome()
