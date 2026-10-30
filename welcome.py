@@ -36,6 +36,18 @@ ORBIT_SPEED = 0.008  # how far (in radians) they move each frame; a full lap tak
 ORBIT_DELAY = 30     # milliseconds between frames (about 33 frames a second)
 ORBIT_DIM = 0.6      # how much a phrase fades at the very back of the oval (0 = not at all, 1 = invisible)
 
+# Floating preview cards on the left and right of the hero
+PREVIEW_WIDTH = 220       # width of one preview card (pixels)
+PREVIEW_PADDING = 16      # space between a card's edge and its content
+PREVIEW_MIN_PAGE = 1000   # hide the preview cards when the window is narrower than this
+FLOAT_AMPLITUDE = 5       # how many pixels a card floats up and down
+FLOAT_DELAY = 40          # milliseconds between two floating steps
+# One (speed, starting point) pair per card, all different so the cards never move in step
+FLOAT_TIMINGS = [(0.045, 0.0), (0.032, 1.7), (0.053, 3.1), (0.038, 4.6)]
+
+# Features section ("bento grid")
+BENTO_MAX_WIDTH = 900     # the grid is never wider than this
+
 # Typewriter animation settings
 TYPE_HABITS = ["Read 10 pages", "Hit the gym", "Solve 1 LeetCode problem", "Drink 3L water"]
 TYPE_DELAY = 90      # milliseconds between typed letters
@@ -295,6 +307,9 @@ def draw_typewriter(canvas, state, x, y):
     left = x - (font.measure(prefix) + longest) / 2
 
     canvas.create_text(left, y, text=prefix, fill=theme.MUTED, font=font, anchor="w")
+    # Remember the space the line takes with the longest habit, so the preview cards can keep clear of it
+    height = font.metrics("linespace")
+    state["typewriter_box"] = (left, y - height / 2, left + font.measure(prefix) + longest, y + height / 2)
     typing = state["typing"]
     habit = TYPE_HABITS[typing["habit"]]
     state["typed_item"] = canvas.create_text(
@@ -332,8 +347,16 @@ def draw_hero(canvas, state, width):
     title_height = fonts["title"].metrics("linespace")
     rx, ry, phrase_height = plan_orbit(state, title_width, title_height, width)
 
-    # Put the title just low enough that a phrase at the very top of the oval clears the badge
+    # Draw the preview cards now (out of the way at the top) so we know how tall they are
+    cards = draw_preview_cards(canvas, width)
+    band = card_band(state, middle_x, rx, ry, phrase_height, cards)
+
+    # Put the title just low enough that a phrase at the very top of the oval clears the badge,
+    # and, if there are preview cards, low enough that the top cards fit above the band the phrases sweep through
     title_y = badge_bottom + 12 + phrase_height / 2 + ry
+    if len(cards) > 0:
+        tallest_top_card = max(card["height"] for card in cards if card["where"] == "top")
+        title_y = max(title_y, HERO_TOP + tallest_top_card + band)
     draw_mixed_text(canvas, middle_x, title_y, [("Consist", theme.ACCENT), ("ify", theme.TEXT)], fonts["title"])
 
     # The tagline starts just below the lowest point a phrase can reach
@@ -348,6 +371,19 @@ def draw_hero(canvas, state, width):
     button = state["get_started"]
     button_y = typewriter_y + typewriter_height / 2 + 26 + button.winfo_reqheight() / 2
     canvas.create_window(middle_x, button_y, window=button)
+    hero_bottom = button_y + button.winfo_reqheight() / 2 + 50
+    # Make the hero tall enough that the bottom cards fit below the band the phrases sweep through
+    if len(cards) > 0:
+        tallest_bottom_card = max(card["height"] for card in cards if card["where"] == "bottom")
+        hero_bottom = max(hero_bottom, title_y + band + tallest_bottom_card + 30)
+
+    # Everything drawn so far (badge, title, tagline, typewriter, button) must stay clear of the preview cards
+    card_items = set()
+    for card in cards:
+        card_items.update(canvas.find_withtag(card["tag"]))
+    obstacles = [canvas.bbox(item) for item in canvas.find_all() if item not in card_items]
+    obstacles.append(state["typewriter_box"])
+    obstacles = obstacles + orbit_boxes(state, middle_x, title_y, rx, ry, phrase_height)
 
     # Create the four phrases (alternating the two theme colors), then put them in place
     state["orbit"] = {"x": middle_x, "y": title_y, "rx": rx, "ry": ry}
@@ -363,7 +399,182 @@ def draw_hero(canvas, state, width):
         state["orbit_colors"].append(color)
     move_orbit(canvas, state)
 
-    return button_y + button.winfo_reqheight() / 2 + 50
+    return place_preview_cards(canvas, state, cards, hero_bottom, obstacles)
+
+
+# Return the boxes every orbiting phrase passes through during a full lap (checked every 5 degrees)
+def orbit_boxes(state, middle_x, middle_y, rx, ry, phrase_height):
+    phrase_font = state["fonts"]["phrase"]
+    boxes = []
+    for degree in range(0, 360, 5):
+        angle = math.radians(degree)
+        x = middle_x + rx * math.cos(angle)
+        y = middle_y + ry * math.sin(angle)
+        for phrase in ORBIT_PHRASES:
+            half_width = phrase_font.measure(phrase) / 2
+            boxes.append((x - half_width, y - phrase_height / 2, x + half_width, y + phrase_height / 2))
+    return boxes
+
+
+# True if two (left, top, right, bottom) boxes come closer than `margin` pixels to each other
+def boxes_touch(a, b, margin):
+    return a[0] - margin < b[2] and b[0] < a[2] + margin and a[1] - margin < b[3] and b[1] < a[3] + margin
+
+
+# Preview card content: "🔥 12-day streak", "LeetCode" and a row of 7 squares for the last week
+def preview_streak(canvas, x, y, tag):
+    title = canvas.create_text(x, y, text="🔥 12-day streak", fill=theme.TEXT, font=(theme.FONT, 13, "bold"), anchor="nw", tags=tag)
+    y = canvas.bbox(title)[3] + 2
+    label = canvas.create_text(x, y, text="LeetCode", fill=theme.MUTED, font=(theme.FONT, 10), anchor="nw", tags=tag)
+    y = canvas.bbox(label)[3] + 10
+    for day in range(7):
+        left = x + day * 18
+        level = [2, 3, 4, 3, 4, 4, 4][day]
+        canvas.create_rectangle(left, y, left + 14, y + 14, fill=theme.HEATMAP[level], outline="", tags=tag)
+    return y + 14
+
+
+# Preview card content: "🏆 New badge" and "7-day streak unlocked"
+def preview_badge(canvas, x, y, tag):
+    title = canvas.create_text(x, y, text="🏆 New badge", fill=theme.TEXT, font=(theme.FONT, 13, "bold"), anchor="nw", tags=tag)
+    y = canvas.bbox(title)[3] + 2
+    label = canvas.create_text(x, y, text="7-day streak unlocked", fill=theme.MUTED, font=(theme.FONT, 10), anchor="nw", tags=tag)
+    return canvas.bbox(label)[3]
+
+
+# Preview card content: "Today", "3 / 5 done" and a thin progress bar
+def preview_today(canvas, x, y, tag):
+    title = canvas.create_text(x, y, text="Today", fill=theme.TEXT, font=(theme.FONT, 13, "bold"), anchor="nw", tags=tag)
+    y = canvas.bbox(title)[3] + 2
+    label = canvas.create_text(x, y, text="3 / 5 done", fill=theme.MUTED, font=(theme.FONT, 10), anchor="nw", tags=tag)
+    y = canvas.bbox(label)[3] + 10
+    # The grey track is the whole width; the accent part on top is 3/5 of it
+    track_width = PREVIEW_WIDTH - 2 * PREVIEW_PADDING
+    canvas.create_rectangle(x, y, x + track_width, y + 6, fill=theme.BORDER, outline="", tags=tag)
+    canvas.create_rectangle(x, y, x + track_width * 3 / 5, y + 6, fill=theme.ACCENT, outline="", tags=tag)
+    return y + 6
+
+
+# Preview card content: a mini checklist of three habits
+def preview_checklist(canvas, x, y, tag):
+    for line in ("✅ Gym", "✅ Read 10 pages", "⬜ Drink 3L water"):
+        item = canvas.create_text(x, y, text=line, fill=theme.TEXT, font=(theme.FONT, 10), anchor="nw", tags=tag)
+        y = canvas.bbox(item)[3] + 4
+    return y - 4
+
+
+# Draw one preview card: its content first, then the box behind it; return the card's (left, top, right, bottom)
+def draw_preview_card(canvas, left, top, tag, draw_content):
+    content_bottom = draw_content(canvas, left + PREVIEW_PADDING, top + PREVIEW_PADDING, tag)
+    bottom = content_bottom + PREVIEW_PADDING
+    # The card is PREVIEW_WIDTH wide, or wider if its text needs more room (e.g. with Windows display scaling)
+    right = max(left + PREVIEW_WIDTH, canvas.bbox(tag)[2] + PREVIEW_PADDING)
+    # tags=(tag, "card"): the box moves with its card, and draw_page pushes every "card" box behind the text
+    canvas.create_rectangle(left, top, right, bottom, fill=theme.CARD, outline=theme.BORDER, tags=(tag, "card"))
+    return (left, top, right, bottom)
+
+
+# Draw the four preview cards at the top of the hero (they are moved into place later); return their details
+def draw_preview_cards(canvas, width):
+    if width < PREVIEW_MIN_PAGE:
+        return []
+
+    left_x = 40
+    right_x = width - 40 - PREVIEW_WIDTH
+    # (content, left edge, top or bottom of the hero); the second card on each side is shifted 24px inwards
+    layout = [
+        (preview_streak, left_x, "top"),
+        (preview_badge, left_x + 24, "bottom"),
+        (preview_today, right_x, "top"),
+        (preview_checklist, right_x - 24, "bottom"),
+    ]
+    cards = []
+    for i in range(len(layout)):
+        draw_content, left, where = layout[i]
+        tag = "float" + str(i)
+        box = draw_preview_card(canvas, left, HERO_TOP, tag, draw_content)
+        # A right-side card that grew wider than planned is moved left, so it doesn't go off the window
+        extra = (box[2] - box[0]) - PREVIEW_WIDTH
+        if left >= right_x - 24 and extra > 0:
+            canvas.move(tag, -extra, 0)
+            box = (box[0] - extra, box[1], box[2] - extra, box[3])
+        cards.append({"tag": tag, "where": where, "left": box[0], "right": box[2], "height": box[3] - box[1]})
+    return cards
+
+
+# How far above and below the title the phrases come into the card columns (0 if they never do)
+# (both sides are checked, because a card that grew to fit its text sits closer to the middle)
+def card_band(state, middle_x, rx, ry, phrase_height, cards):
+    if len(cards) == 0:
+        return 0
+    phrase_font = state["fonts"]["phrase"]
+    widest = max(phrase_font.measure(phrase) for phrase in ORBIT_PHRASES)
+    margin = FLOAT_AMPLITUDE + 8
+
+    # How close the cards come to the middle, on whichever side they come closest
+    left_gap = middle_x - max(card["right"] for card in cards if card["right"] < middle_x)
+    right_gap = min(card["left"] for card in cards if card["left"] > middle_x) - middle_x
+    closest = min(left_gap, right_gap)
+    # A phrase reaches the cards when its middle is within (half a phrase + margin) of that distance.
+    # On the oval x = middle_x + rx * cos(angle), so that happens once |cos(angle)| >= reach
+    reach = (closest - widest / 2 - margin) / rx
+    if reach >= 1:
+        return 0
+    # At that point |sin(angle)| = sqrt(1 - reach²), so the phrase is this far above or below the title
+    return ry * math.sqrt(1 - max(reach, 0) ** 2) + phrase_height / 2 + margin
+
+
+# True if a card's box comes too close to any obstacle (closer than the float distance plus a little)
+def card_is_touching(box, obstacles):
+    for obstacle in obstacles:
+        if boxes_touch(box, obstacle, FLOAT_AMPLITUDE + 8):
+            return True
+    return False
+
+
+# Move the bottom cards down into place, keep every card clear of everything, start the floating;
+# return the hero's bottom y (it grows if a bottom card had to slide further down)
+def place_preview_cards(canvas, state, cards, hero_bottom, obstacles):
+    state["floaters"] = []
+    new_bottom = hero_bottom
+    for i in range(len(cards)):
+        card = cards[i]
+        tag = card["tag"]
+
+        # Bottom cards were drawn at the top first (to learn their height); now move them down
+        if card["where"] == "bottom":
+            top = canvas.bbox(tag)[1]
+            canvas.move(tag, 0, hero_bottom - 30 - card["height"] - top)
+            # Still touching something (e.g. a long typewriter line)? Slide down 8px at a time, up to 40 times
+            tries = 0
+            while card_is_touching(canvas.bbox(tag), obstacles) and tries < 40:
+                canvas.move(tag, 0, 8)
+                tries = tries + 1
+            new_bottom = max(new_bottom, canvas.bbox(tag)[3] + 30)
+
+        # A card that still touches something (a top card can't slide away) is removed instead
+        if card_is_touching(canvas.bbox(tag), obstacles):
+            canvas.delete(tag)
+        else:
+            speed, phase = FLOAT_TIMINGS[i]
+            state["floaters"].append({"tag": tag, "speed": speed, "phase": phase, "offset": 0})
+    return new_bottom
+
+
+# Move every preview card a little along its own wave, then ask after() for the next step
+def animate_floating(canvas, state):
+    if not canvas.winfo_exists():
+        return
+
+    state["float_frame"] = state["float_frame"] + 1
+    for floater in state["floaters"]:
+        # sin goes smoothly between -1 and 1, so the wanted offset goes between -5 and +5 pixels
+        wanted = FLOAT_AMPLITUDE * math.sin(state["float_frame"] * floater["speed"] + floater["phase"])
+        # canvas.move shifts every item with this tag by a difference, so move by (wanted - where it is now)
+        canvas.move(floater["tag"], 0, wanted - floater["offset"])
+        floater["offset"] = wanted
+
+    canvas.winfo_toplevel().after(FLOAT_DELAY, lambda: animate_floating(canvas, state))
 
 
 # Draw the About section starting at y = top; return the y where it ends
@@ -386,11 +597,11 @@ def draw_about(canvas, state, top, width):
         item = canvas.create_text(width / 2, y, text=line, fill=theme.MUTED, font=(theme.FONT, 13), width=900, justify="center", anchor="n")
         y = canvas.bbox(item)[3] + 6
 
-    return y + 60
+    return y + 20
 
 
 # Draw a grid of little squares that gets brighter from left to right, like progress growing
-def draw_decorative_heatmap(canvas, left, top):
+def draw_decorative_heatmap(canvas, left, top, empty_color):
     # A fixed seed gives the same "random" pattern every time the page opens
     random_numbers = random.Random(7)
 
@@ -400,60 +611,111 @@ def draw_decorative_heatmap(canvas, left, top):
             bonus = column * 3 // DECOR_COLUMNS
             level = random_numbers.randint(0, 2) + bonus
 
+            # Level 0 ("nothing done") uses empty_color, so it still shows on a card the same color as HEATMAP[0]
+            if level == 0:
+                color = empty_color
+            else:
+                color = theme.HEATMAP[level]
             x1 = left + column * (DECOR_SQUARE + DECOR_GAP)
             y1 = top + row * (DECOR_SQUARE + DECOR_GAP)
-            canvas.create_rectangle(x1, y1, x1 + DECOR_SQUARE, y1 + DECOR_SQUARE, fill=theme.HEATMAP[level], outline="")
+            canvas.create_rectangle(x1, y1, x1 + DECOR_SQUARE, y1 + DECOR_SQUARE, fill=color, outline="")
 
 
-# Draw the three feature cards in a row starting at y = top; return the y where they end
-def draw_feature_cards(canvas, top, width):
-    cards = [
-        ("🔥 Streaks", "See how many days in a row you've kept each habit going."),
-        ("🟩 Heatmap", "Your last 90 days at a glance: the brighter, the better."),
-        ("📊 Stats & Export", "Best streaks and completion rates, saved to a CSV file."),
-    ]
-    card_width = 270
-    card_gap = 16
-    left = width / 2 - (3 * card_width + 2 * card_gap) / 2
+# True if `widget` is `ancestor` itself or sits somewhere inside it
+def is_inside(widget, ancestor):
+    while widget is not None:
+        if widget == ancestor:
+            return True
+        widget = widget.master
+    return False
 
-    # First write the text in each card, remembering how low the lowest text goes
-    lowest = top
-    for i in range(len(cards)):
-        heading, text = cards[i]
-        x = left + i * (card_width + card_gap) + 20
-        heading_item = canvas.create_text(x, top + 18, text=heading, fill=theme.ACCENT, font=(theme.FONT, 13, "bold"), anchor="nw")
-        heading_bottom = canvas.bbox(heading_item)[3]
-        text_item = canvas.create_text(x, heading_bottom + 6, text=text, fill=theme.MUTED, font=(theme.FONT, 10), width=card_width - 40, anchor="nw")
-        lowest = max(lowest, canvas.bbox(text_item)[3])
 
-    # Then draw all three card boxes the same height, tall enough for the tallest text
-    bottom = lowest + 18
-    for i in range(len(cards)):
-        x = left + i * (card_width + card_gap)
-        canvas.create_rectangle(x, top, x + card_width, bottom, fill=theme.CARD, outline=theme.BORDER, tags="card")
+# The mouse left a card (or moved onto something inside it): drop the accent border only if it really left
+def on_card_leave(card):
+    x, y = card.winfo_pointerxy()
+    if not is_inside(card.winfo_containing(x, y), card):
+        card.config(highlightbackground=theme.BORDER)
 
-    return bottom
+
+# Create one bento card: icon tile, title, one muted line; return the card so extra content can be added
+def create_bento_card(grid, row, column, icon, title, line, columnspan=1, wrap=230):
+    # highlightthickness=1 draws a 1px border around the frame, in the highlightbackground color
+    card = tk.Frame(grid, bg=theme.CARD, highlightthickness=1, highlightbackground=theme.BORDER, padx=16, pady=16)
+    # sticky="nsew" stretches the card to fill its whole grid cell (north, south, east and west)
+    card.grid(row=row, column=column, columnspan=columnspan, sticky="nsew", padx=6, pady=6)
+
+    ui.icon_tile(card, icon).pack(anchor="w")
+    title_label = tk.Label(card, text=title, font=(theme.FONT, 13, "bold"), fg=theme.TEXT, bg=theme.CARD)
+    title_label.pack(anchor="w", pady=(10, 0))
+    line_label = tk.Label(card, text=line, font=(theme.FONT, 10), fg=theme.MUTED, bg=theme.CARD, wraplength=wrap, justify="left")
+    line_label.pack(anchor="w")
+
+    card.bind("<Enter>", lambda event: card.config(highlightbackground=theme.ACCENT))
+    card.bind("<Leave>", lambda event: on_card_leave(card))
+    return card
+
+
+# Draw a tiny 5-bar chart for the Stats card
+def create_bar_chart(card):
+    chart = tk.Canvas(card, width=150, height=56, bg=theme.CARD, highlightthickness=0)
+    heights = [18, 28, 24, 40, 54]
+    shades = [theme.HEATMAP[1], theme.HEATMAP[2], theme.HEATMAP[2], theme.HEATMAP[3], theme.HEATMAP[4]]
+    for i in range(5):
+        left = i * 28
+        # Bars stand on the bottom edge (y = 56), so a taller bar starts higher up
+        chart.create_rectangle(left, 56 - heights[i], left + 18, 56, fill=shades[i], outline="")
+    return chart
+
+
+# Build the bento grid once: a big Heatmap card, a Streaks card, then three small cards; return its frame
+def create_bento(canvas):
+    grid = tk.Frame(canvas, bg=theme.BG)
+    # Three columns of equal width (uniform="bento"), which share any extra space equally (weight=1)
+    for column in range(3):
+        grid.columnconfigure(column, weight=1, uniform="bento")
+
+    # Row 0: the Heatmap card spans columns 0 and 1 (2/3 of the width), Streaks takes column 2
+    heatmap_card = create_bento_card(grid, 0, 0, "🟩", "Heatmap", "Your last 90 days at a glance: the brighter, the better.", columnspan=2, wrap=500)
+    decor_width = DECOR_COLUMNS * (DECOR_SQUARE + DECOR_GAP) - DECOR_GAP
+    decor_height = DECOR_ROWS * (DECOR_SQUARE + DECOR_GAP) - DECOR_GAP
+    heatmap_canvas = tk.Canvas(heatmap_card, width=decor_width, height=decor_height, bg=theme.CARD, highlightthickness=0)
+    draw_decorative_heatmap(heatmap_canvas, 0, 0, theme.BG)
+    heatmap_canvas.pack(anchor="w", pady=(16, 0))
+
+    streak_card = create_bento_card(grid, 0, 2, "🔥", "Streaks", "Keep the chain going, one day at a time.")
+    big_number = tk.Label(streak_card, text="🔥 12", font=(theme.FONT, 40, "bold"), fg=theme.ACCENT, bg=theme.CARD)
+    big_number.pack(anchor="w", pady=(16, 0))
+    days_label = tk.Label(streak_card, text="days in a row", font=(theme.FONT, 11), fg=theme.MUTED, bg=theme.CARD)
+    days_label.pack(anchor="w")
+
+    # Row 1: three equal cards, one per column
+    stats_card = create_bento_card(grid, 1, 0, "📊", "Stats & Export", "Best streaks and completion rates, saved to a CSV file.")
+    create_bar_chart(stats_card).pack(anchor="w", pady=(14, 0))
+    create_bento_card(grid, 1, 1, "🏆", "Milestones", "7 · 30 · 100 day badges")
+    create_bento_card(grid, 1, 2, "🔒", "Secure accounts", "Passwords hashed with PBKDF2")
+    return grid
 
 
 # Draw the Features section starting at y = top; return the y where the page ends
 def draw_features(canvas, state, top, width):
     heading_font = state["fonts"]["heading"]
-    y = top + 60
+    y = top + 40
     state["sections"]["features"] = y
 
     heading_height = heading_font.metrics("linespace")
     draw_mixed_text(canvas, width / 2, y + heading_height / 2, [("Everything you need to ", theme.ACCENT), ("stay consistent", theme.TEXT)], heading_font)
-    y = y + heading_height + 30
+    y = y + heading_height + 24
 
-    decor_width = DECOR_COLUMNS * (DECOR_SQUARE + DECOR_GAP) - DECOR_GAP
-    decor_height = DECOR_ROWS * (DECOR_SQUARE + DECOR_GAP) - DECOR_GAP
-    draw_decorative_heatmap(canvas, width / 2 - decor_width / 2, y)
-    y = y + decor_height + 30
-
-    y = draw_feature_cards(canvas, y, width)
+    # Place the bento grid (built once in build_welcome_page) on the canvas, centered and at most BENTO_MAX_WIDTH wide
+    bento = state["bento"]
+    bento_width = min(BENTO_MAX_WIDTH, width - 80)
+    canvas.create_window(width / 2, y, window=bento, anchor="n", width=bento_width)
+    # update_idletasks lets tkinter finish laying out the grid, so its height is known
+    bento.update_idletasks()
+    y = y + bento.winfo_reqheight()
 
     # A thin line, then the footer text
-    y = y + 70
+    y = y + 50
     canvas.create_line(60, y, width - 60, y, fill=theme.BORDER)
     footer = canvas.create_text(
         width / 2, y + 20, text="Made by Krishiv Sharma, Keerthy Sarayuu & Shaan Vyas",
@@ -542,6 +804,11 @@ def build_welcome_page(parent, on_get_started, on_login, on_signup):
         "page_height": 1,
         "angle": 0,
         "orbit_items": [],
+        # The preview cards that float up and down, and a frame counter that drives their waves
+        "floaters": [],
+        "float_frame": 0,
+        # The features grid is made of real widgets, so it is built once here and only re-placed on redraw
+        "bento": create_bento(canvas),
         # Which habit the typewriter is on, how many of its letters are showing, and whether it is deleting
         "typing": {"habit": 0, "letters": 0, "deleting": False},
     }
@@ -557,6 +824,7 @@ def build_welcome_page(parent, on_get_started, on_login, on_signup):
     canvas.configure(yscrollcommand=lambda first, last: on_page_scroll(navbar, canvas, state, first, last))
 
     animate_orbit(canvas, state)
+    animate_floating(canvas, state)
     # Start typing a little later, once the page has been drawn and "typed_item" exists
     canvas.winfo_toplevel().after(500, lambda: type_step(canvas, state))
     return page

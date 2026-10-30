@@ -74,6 +74,15 @@ def set_button_text(button, text):
     button.itemconfig("label", text=text)
 
 
+# Draw an emoji inside a small rounded square (an "icon tile") and return its Canvas
+def icon_tile(parent, emoji, size=36, radius=8):
+    canvas = tk.Canvas(parent, width=size, height=size, bg=parent.cget("bg"), highlightthickness=0)
+    points = rounded_rectangle_points(1, 1, size - 2, size - 2, radius)
+    canvas.create_polygon(points, smooth=True, fill=theme.BG, outline=theme.BORDER)
+    canvas.create_text(size / 2, size / 2, text=emoji, font=(theme.FONT, int(size / 3)))
+    return canvas
+
+
 # Show both button styles in a small test window when ui.py is run on its own
 if __name__ == "__main__":
     window = tk.Tk()
