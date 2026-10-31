@@ -7,6 +7,7 @@ import badges
 import database
 import gui
 import heatmap
+import settings
 import theme
 import welcome
 
@@ -60,6 +61,11 @@ def on_logout():
     show_welcome()
 
 
+# The account no longer exists, so log out (forget the user) and go back to the Welcome page
+def on_account_deleted():
+    on_logout()
+
+
 # Create one full-width sidebar button
 def create_sidebar_button(sidebar, text, command):
     button = tk.Button(
@@ -95,6 +101,8 @@ def show_tab(tab_name, content, buttons):
         gui.create_habit_section(content, app["user_id"])
     elif tab_name == "badges":
         badges.build_badges_page(content, app["user_id"])
+    elif tab_name == "settings":
+        settings.build_settings_page(content, app["user_id"], app["username"], on_account_deleted)
     else:
         # Rebuilt every time the tab is opened, so the heatmap, weekly chart and stats always show fresh data
         heatmap_holder = tk.Frame(content, bg=theme.BG)
@@ -129,12 +137,15 @@ def build_dashboard(parent):
     buttons["today"] = create_sidebar_button(sidebar, "✅ Today", lambda: show_tab("today", content, buttons))
     buttons["progress"] = create_sidebar_button(sidebar, "🟩 Progress", lambda: show_tab("progress", content, buttons))
     buttons["badges"] = create_sidebar_button(sidebar, "🏆 Badges", lambda: show_tab("badges", content, buttons))
+    buttons["settings"] = create_sidebar_button(sidebar, "⚙️ Settings", lambda: show_tab("settings", content, buttons))
     logout_button = create_sidebar_button(sidebar, "🚪 Logout", on_logout)
 
     buttons["today"].pack(fill="x")
     buttons["progress"].pack(fill="x")
     buttons["badges"].pack(fill="x")
     logout_button.pack(side="bottom", fill="x", pady=(0, 20))
+    # Packed at the bottom AFTER Logout, so it sits just above Logout
+    buttons["settings"].pack(side="bottom", fill="x")
 
     show_tab("today", content, buttons)
 

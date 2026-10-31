@@ -63,12 +63,36 @@ def create_tables():
     conn.close()
 
 
-# Create a new user with a salted, hashed password; return False if the username is taken
-def create_user(username, password):
-    salt = os.urandom(16)
+# Hash a password with a salt (PBKDF2-SHA256, PASSWORD_ITERATIONS rounds) and return the hash as hex text
+def hash_password(password, salt):
     password_hash = hashlib.pbkdf2_hmac(
         "sha256", password.encode("utf-8"), salt, PASSWORD_ITERATIONS
     )
+    return password_hash.hex()
+
+
+# Return True if `password` is this user's real password, else False (also False if the user doesn't exist)
+def verify_password(user_id, password):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT password_hash, salt FROM users WHERE id = ?", (user_id,))
+    row = cursor.fetchone()
+
+    conn.commit()
+    conn.close()
+
+    if row is None:
+        return False
+
+    stored_hash, stored_salt = row
+    # Hash what was typed with the SAME salt, then compare in constant time
+    return hmac.compare_digest(hash_password(password, bytes.fromhex(stored_salt)), stored_hash)
+
+
+# Create a new user with a salted, hashed password; return False if the username is taken
+def create_user(username, password):
+    salt = os.urandom(16)
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -76,7 +100,7 @@ def create_user(username, password):
     try:
         cursor.execute(
             "INSERT INTO users (username, password_hash, salt) VALUES (?, ?, ?)",
-            (username, password_hash.hex(), salt.hex()),
+            (username, hash_password(password, salt), salt.hex()),
         )
         conn.commit()
         created = True
@@ -92,10 +116,7 @@ def check_login(username, password):
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute(
-        "SELECT id, password_hash, salt FROM users WHERE username = ?",
-        (username,),
-    )
+    cursor.execute("SELECT id FROM users WHERE username = ?", (username,))
     row = cursor.fetchone()
 
     conn.commit()
@@ -104,14 +125,53 @@ def check_login(username, password):
     if row is None:
         return None
 
-    user_id, stored_hash, stored_salt = row
-    password_hash = hashlib.pbkdf2_hmac(
-        "sha256", password.encode("utf-8"), bytes.fromhex(stored_salt), PASSWORD_ITERATIONS
-    )
-
-    if hmac.compare_digest(password_hash.hex(), stored_hash):
+    user_id = row[0]
+    if verify_password(user_id, password):
         return user_id
     return None
+
+
+# Change a user's password if old_password is correct; return True if changed, False if old_password was wrong
+def change_password(user_id, old_password, new_password):
+    if not verify_password(user_id, old_password):
+        return False
+
+    # A brand-new random salt for the new password
+    salt = os.urandom(16)
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "UPDATE users SET password_hash = ?, salt = ? WHERE id = ?",
+        (hash_password(new_password, salt), salt.hex(), user_id),
+    )
+
+    conn.commit()
+    conn.close()
+    return True
+
+
+# Delete a user and ALL their data (logs, habits, badges, account) if the password is correct; return True/False
+def delete_user(user_id, password):
+    if not verify_password(user_id, password):
+        return False
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    # Logs don't store the user, only the habit, so delete the logs of every habit that belongs to this user
+    cursor.execute(
+        "DELETE FROM logs WHERE habit_id IN (SELECT id FROM habits WHERE user_id = ?)",
+        (user_id,),
+    )
+    cursor.execute("DELETE FROM habits WHERE user_id = ?", (user_id,))
+    cursor.execute("DELETE FROM badges WHERE user_id = ?", (user_id,))
+    cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
+
+    conn.commit()
+    conn.close()
+    return True
 
 
 # Add a new habit for a user; return True if added, False if that user already has it
@@ -457,3 +517,10 @@ if __name__ == "__main__":
     print(check_new_badges(user_id))
     print(get_badges(user_id))
     print(get_current_best_streak(user_id))
+
+    # Change the password: the old one stops working (None), the new one logs in (an id)
+    print(change_password(user_id, "demo123", "newpass456"))
+    print(check_login("demo", "demo123"))
+    print(check_login("demo", "newpass456"))
+    # Change it back, so the other files' test windows can still log in as demo / demo123
+    change_password(user_id, "newpass456", "demo123")
