@@ -20,8 +20,9 @@ CONFETTI_TIME = 2500      # milliseconds before the celebration closes by itself
 
 # Return the corner points of a rounded rectangle; with smooth=True, tkinter bends the outline through them
 def rounded_rectangle_points(x1, y1, x2, y2, radius):
-    # Each corner point is listed 3 times: the curve hugs a point more tightly the more often it appears,
-    # so the straight edges stay straight and only the corners get rounded
+    # Each corner is one point, with a point `radius` away from it along each edge on either side.
+    # smooth=True bends the outline into a curve around each corner point, while the points along
+    # each edge are in a straight line, so the edges stay straight and only the corners get rounded
     return [
         x1 + radius, y1, x2 - radius, y1, x2, y1, x2, y1 + radius,
         x2, y2 - radius, x2, y2, x2 - radius, y2, x1 + radius, y2,
@@ -92,6 +93,36 @@ def icon_tile(parent, emoji, size=36, radius=8):
     return canvas
 
 
+# True if `widget` is `ancestor` itself or sits somewhere inside it
+def is_inside(widget, ancestor):
+    while widget is not None:
+        if widget == ancestor:
+            return True
+        widget = widget.master
+    return False
+
+
+# Change a card's border color and thickness (a thicker border makes the card look slightly bigger)
+def set_border(card, color, thickness):
+    card.config(highlightbackground=color, highlightthickness=thickness)
+
+
+# Give a card a border that changes color and grows by 1px while the mouse is over it
+def add_hover_border(card, normal_color, hover_color, normal_thickness):
+    set_border(card, normal_color, normal_thickness)
+    card.bind("<Enter>", lambda event: set_border(card, hover_color, normal_thickness + 1))
+    # Tk also sends <Leave> when the mouse moves onto a label inside the card, so first check
+    # where the pointer really is, and only go back to normal if it has left the card completely
+    card.bind("<Leave>", lambda event: leave_card(card, normal_color, normal_thickness))
+
+
+# The mouse left a card (or moved onto something inside it): reset the border only if it really left
+def leave_card(card, normal_color, normal_thickness):
+    x, y = card.winfo_pointerxy()
+    if not is_inside(card.winfo_containing(x, y), card):
+        set_border(card, normal_color, normal_thickness)
+
+
 # Move every confetti piece one frame, remove pieces that left the screen, then ask after() for the next frame
 def animate_confetti(canvas, pieces):
     # Stop if the celebration was closed (by the timer or a click) or the page was closed
@@ -121,8 +152,8 @@ def close_confetti(canvas):
         canvas.destroy()
 
 
-# Cover the parent with a celebration: a burst of falling confetti and a big message; return the canvas
-def show_confetti(parent, message):
+# Cover the parent with a celebration: a burst of falling confetti, a big message and a smaller subtitle; return the canvas
+def show_confetti(parent, message, subtitle="See you tomorrow 🔥"):
     # A canvas laid over the whole parent: relwidth/relheight=1 make it exactly as big as the parent
     canvas = tk.Canvas(parent, bg=theme.BG, highlightthickness=0, cursor="hand2")
     canvas.place(relx=0, rely=0, relwidth=1, relheight=1)
@@ -154,7 +185,7 @@ def show_confetti(parent, message):
 
     # The text is created after the confetti, so it is drawn on top of it
     canvas.create_text(middle_x, middle_y, text=message, fill=theme.TEXT, font=(theme.FONT, 28, "bold"))
-    canvas.create_text(middle_x, middle_y + 46, text="See you tomorrow 🔥", fill=theme.MUTED, font=(theme.FONT, 13))
+    canvas.create_text(middle_x, middle_y + 46, text=subtitle, fill=theme.MUTED, font=(theme.FONT, 13))
 
     canvas.bind("<Button-1>", lambda event: close_confetti(canvas))
     canvas.winfo_toplevel().after(CONFETTI_TIME, lambda: close_confetti(canvas))

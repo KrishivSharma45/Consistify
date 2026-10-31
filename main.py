@@ -3,6 +3,7 @@ import tkinter as tk
 
 # Import our own files: the database and every page of the app
 import auth
+import badges
 import database
 import gui
 import heatmap
@@ -92,6 +93,8 @@ def show_tab(tab_name, content, buttons):
 
     if tab_name == "today":
         gui.create_habit_section(content, app["user_id"])
+    elif tab_name == "badges":
+        badges.build_badges_page(content, app["user_id"])
     else:
         # Rebuilt every time the tab is opened, so the heatmap, weekly chart and stats always show fresh data
         heatmap_holder = tk.Frame(content, bg=theme.BG)
@@ -125,10 +128,12 @@ def build_dashboard(parent):
     buttons = {}
     buttons["today"] = create_sidebar_button(sidebar, "✅ Today", lambda: show_tab("today", content, buttons))
     buttons["progress"] = create_sidebar_button(sidebar, "🟩 Progress", lambda: show_tab("progress", content, buttons))
+    buttons["badges"] = create_sidebar_button(sidebar, "🏆 Badges", lambda: show_tab("badges", content, buttons))
     logout_button = create_sidebar_button(sidebar, "🚪 Logout", on_logout)
 
     buttons["today"].pack(fill="x")
     buttons["progress"].pack(fill="x")
+    buttons["badges"].pack(fill="x")
     logout_button.pack(side="bottom", fill="x", pady=(0, 20))
 
     show_tab("today", content, buttons)

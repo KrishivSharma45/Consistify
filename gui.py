@@ -311,11 +311,33 @@ def on_check_click(habit_id, done_var, habit_list_frame, user_id, on_change=None
     if on_change is not None:
         on_change()
 
-    # A tick (not an untick) that leaves every habit done must have been the last one missing: celebrate.
+    # Only a tick (not an untick) can unlock a badge or finish the day
+    if not done_var.get():
+        return
+
     # habit_list_frame.master is the frame the habit section was built in (the dashboard's content area)
+    content = habit_list_frame.master
+    new_badges = database.check_new_badges(user_id)
+    if len(new_badges) > 0:
+        # A new badge beats "all done": only one kind of celebration at a time
+        show_badge_celebrations(content, new_badges)
+        return
+
+    # A tick that leaves every habit done must have been the last one missing: celebrate
     done, total = get_today_progress(user_id)
-    if done_var.get() and total > 0 and done == total:
-        ui.show_confetti(habit_list_frame.master, "🎉 All done for today!")
+    if total > 0 and done == total:
+        ui.show_confetti(content, "🎉 All done for today!")
+
+
+# Celebrate the first badge in the list, then the next one once that celebration has finished, and so on
+def show_badge_celebrations(content, badges):
+    if len(badges) == 0 or not content.winfo_exists():
+        return
+
+    milestone, habit_name = badges[0]
+    ui.show_confetti(content, "🏆 " + str(milestone) + "-day streak unlocked!", subtitle=habit_name)
+    # Wait for this celebration to close by itself (plus a short pause) before showing the next badge
+    content.winfo_toplevel().after(ui.CONFETTI_TIME + 300, lambda: show_badge_celebrations(content, badges[1:]))
 
 
 # Ask where to save the report, then write the CSV there (do nothing if cancelled)

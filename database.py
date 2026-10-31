@@ -8,6 +8,9 @@ from datetime import date, timedelta
 # How many times the password is hashed; higher is slower for attackers (and for us)
 PASSWORD_ITERATIONS = 100000
 
+# Streak lengths (in days) that unlock a badge
+MILESTONES = [3, 7, 14, 30, 50, 100]
+
 
 # Open a connection to the habits.db file (created automatically if missing)
 def get_connection():
@@ -15,7 +18,7 @@ def get_connection():
     return conn
 
 
-# Create the users, habits and logs tables if they don't already exist
+# Create the users, habits, logs and badges tables if they don't already exist
 def create_tables():
     conn = get_connection()
     cursor = conn.cursor()
@@ -43,6 +46,16 @@ def create_tables():
             habit_id INTEGER,
             date TEXT,
             UNIQUE(habit_id, date)
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS badges (
+            user_id INTEGER,
+            milestone INTEGER,
+            habit_name TEXT,
+            unlocked_date TEXT,
+            UNIQUE(user_id, milestone)
         )
     """)
 
@@ -350,6 +363,71 @@ def export_to_csv(user_id, filename="consistify_report.csv"):
     return filename
 
 
+# Return the highest current streak among one user's habits (0 if the user has no habits)
+def get_current_best_streak(user_id):
+    best = 0
+    for habit_id, name in get_all_habits(user_id):
+        streak = get_streak(habit_id)
+        if streak > best:
+            best = streak
+    return best
+
+
+# Unlock every milestone the user has now reached but didn't have yet; return the new ones as (milestone, habit_name)
+def check_new_badges(user_id):
+    # Work out every habit's current streak first, longest first, so a badge is named after the best habit
+    streaks = []
+    for habit_id, name in get_all_habits(user_id):
+        streaks.append((get_streak(habit_id), name))
+    streaks.sort(reverse=True)
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    # The milestones this user has already unlocked
+    cursor.execute("SELECT milestone FROM badges WHERE user_id = ?", (user_id,))
+    unlocked = []
+    for row in cursor.fetchall():
+        unlocked.append(row[0])
+
+    new_badges = []
+    today = date.today().isoformat()
+    for milestone in MILESTONES:
+        if milestone in unlocked:
+            continue
+        for streak, name in streaks:
+            if streak >= milestone:
+                # INSERT OR IGNORE + UNIQUE(user_id, milestone): if this badge somehow exists already, nothing is added
+                cursor.execute(
+                    "INSERT OR IGNORE INTO badges (user_id, milestone, habit_name, unlocked_date) VALUES (?, ?, ?, ?)",
+                    (user_id, milestone, name, today),
+                )
+                # rowcount is 1 if a row was really inserted, 0 if it was ignored
+                if cursor.rowcount == 1:
+                    new_badges.append((milestone, name))
+                break
+
+    conn.commit()
+    conn.close()
+    return new_badges
+
+
+# Return the user's unlocked badges as (milestone, habit_name, unlocked_date), smallest milestone first
+def get_badges(user_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT milestone, habit_name, unlocked_date FROM badges WHERE user_id = ? ORDER BY milestone",
+        (user_id,),
+    )
+    badges = cursor.fetchall()
+
+    conn.commit()
+    conn.close()
+    return badges
+
+
 if __name__ == "__main__":
     create_tables()
     print("Tables created")
@@ -365,7 +443,17 @@ if __name__ == "__main__":
         if name == "Reading":
             reading_id = habit_id
 
-    mark_done(reading_id, date.today().isoformat())
+    # Done today, yesterday and the day before: a 3-day streak
+    today = date.today()
+    mark_done(reading_id, today.isoformat())
+    mark_done(reading_id, (today - timedelta(days=1)).isoformat())
+    mark_done(reading_id, (today - timedelta(days=2)).isoformat())
 
     print(get_all_habits(user_id))
     print(get_streak(reading_id))
+
+    # The first call unlocks the 3-day badge; the second finds nothing new
+    print(check_new_badges(user_id))
+    print(check_new_badges(user_id))
+    print(get_badges(user_id))
+    print(get_current_best_streak(user_id))
