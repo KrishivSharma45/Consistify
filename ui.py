@@ -4,9 +4,18 @@
 import tkinter as tk
 # Import tkinter's font tool, so a button can measure its text and size itself
 import tkinter.font as tkfont
+# Import math (cos and sin) and random, to send each confetti piece off in its own direction
+import math
+import random
 
 # Import the app's shared colors and font
 import theme
+
+CONFETTI_PIECES = 120     # how many pieces burst out
+CONFETTI_GRAVITY = 0.35   # how much faster every piece falls each frame (pixels per frame, added each frame)
+CONFETTI_DRAG = 0.99      # each frame the sideways speed keeps 99% of itself, like air slowing it down
+CONFETTI_FRAME = 16       # milliseconds between frames (about 60 frames a second)
+CONFETTI_TIME = 2500      # milliseconds before the celebration closes by itself
 
 
 # Return the corner points of a rounded rectangle; with smooth=True, tkinter bends the outline through them
@@ -83,12 +92,84 @@ def icon_tile(parent, emoji, size=36, radius=8):
     return canvas
 
 
-# Show both button styles in a small test window when ui.py is run on its own
+# Move every confetti piece one frame, remove pieces that left the screen, then ask after() for the next frame
+def animate_confetti(canvas, pieces):
+    # Stop if the celebration was closed (by the timer or a click) or the page was closed
+    if not canvas.winfo_exists():
+        return
+
+    width = canvas.winfo_width()
+    height = canvas.winfo_height()
+    # Loop over a copy (pieces[:]) because pieces are removed from the real list inside the loop
+    for piece in pieces[:]:
+        # Gravity: every frame the downward speed grows a little, so pieces slow on the way up and speed up falling
+        piece["vy"] = piece["vy"] + CONFETTI_GRAVITY
+        piece["vx"] = piece["vx"] * CONFETTI_DRAG
+        canvas.move(piece["item"], piece["vx"], piece["vy"])
+
+        left, top, right, bottom = canvas.coords(piece["item"])
+        if top > height or right < 0 or left > width:
+            canvas.delete(piece["item"])
+            pieces.remove(piece)
+
+    canvas.winfo_toplevel().after(CONFETTI_FRAME, lambda: animate_confetti(canvas, pieces))
+
+
+# Close the celebration: destroying the canvas also stops its animation
+def close_confetti(canvas):
+    if canvas.winfo_exists():
+        canvas.destroy()
+
+
+# Cover the parent with a celebration: a burst of falling confetti and a big message; return the canvas
+def show_confetti(parent, message):
+    # A canvas laid over the whole parent: relwidth/relheight=1 make it exactly as big as the parent
+    canvas = tk.Canvas(parent, bg=theme.BG, highlightthickness=0, cursor="hand2")
+    canvas.place(relx=0, rely=0, relwidth=1, relheight=1)
+    # Put it above every other widget in the parent. A Canvas's own tkraise()/lift() raise items *inside*
+    # the canvas, so we call the general widget version, tk.Misc.tkraise, on it instead
+    tk.Misc.tkraise(canvas)
+    parent.update_idletasks()
+    width = parent.winfo_width()
+    height = parent.winfo_height()
+    middle_x = width / 2
+    middle_y = height / 2
+
+    colors = [theme.ACCENT, theme.ACCENT_HOVER, theme.SUCCESS, theme.TEXT] + theme.HEATMAP
+    pieces = []
+    for i in range(CONFETTI_PIECES):
+        size = random.randint(4, 9)
+        color = random.choice(colors)
+        # Half the pieces are little rectangles, half are little circles
+        if random.random() < 0.5:
+            item = canvas.create_rectangle(middle_x, middle_y, middle_x + size, middle_y + size * 0.6, fill=color, outline="")
+        else:
+            item = canvas.create_oval(middle_x, middle_y, middle_x + size, middle_y + size, fill=color, outline="")
+
+        # A random direction (angle) and speed; cos and sin split that speed into sideways and up/down parts
+        angle = random.uniform(0, 2 * math.pi)
+        speed = random.uniform(3, 11)
+        # The extra -4 gives every piece a kick upwards, so the burst rises before gravity pulls it down
+        pieces.append({"item": item, "vx": math.cos(angle) * speed, "vy": math.sin(angle) * speed - 4})
+
+    # The text is created after the confetti, so it is drawn on top of it
+    canvas.create_text(middle_x, middle_y, text=message, fill=theme.TEXT, font=(theme.FONT, 28, "bold"))
+    canvas.create_text(middle_x, middle_y + 46, text="See you tomorrow 🔥", fill=theme.MUTED, font=(theme.FONT, 13))
+
+    canvas.bind("<Button-1>", lambda event: close_confetti(canvas))
+    canvas.winfo_toplevel().after(CONFETTI_TIME, lambda: close_confetti(canvas))
+    animate_confetti(canvas, pieces)
+    return canvas
+
+
+# Show both button styles and a confetti button in a small test window when ui.py is run on its own
 if __name__ == "__main__":
     window = tk.Tk()
     window.title("ui.py - rounded buttons")
+    window.geometry("600x420")
     window.configure(bg=theme.BG, padx=40, pady=40)
 
     rounded_button(window, "Filled button", lambda: print("Filled clicked"), "filled", 180, 44).pack(pady=10)
     rounded_button(window, "Ghost button", lambda: print("Ghost clicked"), "ghost", 180, 44).pack(pady=10)
+    rounded_button(window, "Confetti!", lambda: show_confetti(window, "🎉 All done for today!"), "filled", 180, 44).pack(pady=10)
     window.mainloop()

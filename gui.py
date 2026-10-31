@@ -311,6 +311,12 @@ def on_check_click(habit_id, done_var, habit_list_frame, user_id, on_change=None
     if on_change is not None:
         on_change()
 
+    # A tick (not an untick) that leaves every habit done must have been the last one missing: celebrate.
+    # habit_list_frame.master is the frame the habit section was built in (the dashboard's content area)
+    done, total = get_today_progress(user_id)
+    if done_var.get() and total > 0 and done == total:
+        ui.show_confetti(habit_list_frame.master, "🎉 All done for today!")
+
 
 # Ask where to save the report, then write the CSV there (do nothing if cancelled)
 def on_export_click(user_id):
