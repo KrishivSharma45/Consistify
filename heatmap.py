@@ -1,4 +1,6 @@
 import tkinter as tk
+# Import tkinter's font tool, so the hover label can measure itself and stay inside the chart
+import tkinter.font as tkfont
 from datetime import date, timedelta
 
 import database
@@ -11,6 +13,16 @@ GAP = 3
 NUMBER_OF_DAYS = 90
 LEFT_MARGIN = 30
 TOP_MARGIN = 20
+
+# Size settings for the weekly bar chart (in pixels)
+CHART_WIDTH = 420
+CHART_HEIGHT = 170
+CHART_TOP = 26       # space above the tallest bar, for the hover label
+CHART_BOTTOM = 22    # space under the bars, for the day names
+BAR_WIDTH = 28
+BAR_RADIUS = 10      # how round the top corners of a bar are (smoothing curves about half of this)
+GROW_STEPS = 20      # the grow animation takes 20 steps...
+GROW_DELAY = 20      # ...20 milliseconds apart, so about 400 ms in total
 
 
 # Return the color for a given number of habits done in one day (theme.HEATMAP holds the 5 shades)
@@ -204,6 +216,147 @@ def create_stats_section(parent, user_id):
     return section
 
 
+# Return the last 7 days as a list of (date, count), oldest first and today last
+def get_week_counts(user_id):
+    today = date.today()
+    week = []
+    # days_ago goes 6, 5, 4, 3, 2, 1, 0, so the list starts 6 days ago and ends with today
+    for days_ago in range(6, -1, -1):
+        day = today - timedelta(days=days_ago)
+        count = database.get_count_for_date(day.isoformat(), user_id)
+        week.append((day, count))
+    return week
+
+
+# Return the points of a bar with rounded top corners and square bottom corners (for create_polygon smooth=True)
+def rounded_top_points(x1, y1, x2, y2, radius):
+    # With smooth=True a single corner point gets curved, so each top corner is one point with
+    # neighbors `radius` away on both sides. A point repeated 3 times is not curved, so the bottom stays square
+    return [
+        x1, y2, x1, y2, x1, y2,
+        x1, y1 + radius, x1, y1, x1 + radius, y1,
+        x2 - radius, y1, x2, y1, x2, y1 + radius,
+        x2, y2, x2, y2, x2, y2,
+    ]
+
+
+# Move every bar to `fraction` of its final height (0 = flat, 1 = full)
+def set_bar_heights(chart, bars, fraction):
+    for bar in bars:
+        height = bar["height"] * fraction
+        top = bar["base"] - height
+        # A bar can't have corners rounder than half its own height
+        radius = min(BAR_RADIUS, height / 2)
+        chart.coords(bar["item"], *rounded_top_points(bar["left"], top, bar["left"] + BAR_WIDTH, bar["base"], radius))
+
+
+# Grow the bars one small step towards full height, then ask after() for the next step
+def grow_bars(chart, bars, step):
+    if not chart.winfo_exists():
+        return
+
+    # "Ease out": fast at first, slow at the end, so the bars settle gently at their height
+    eased = 1 - (1 - step / GROW_STEPS) ** 3
+    set_bar_heights(chart, bars, eased)
+
+    if step < GROW_STEPS:
+        chart.winfo_toplevel().after(GROW_DELAY, lambda: grow_bars(chart, bars, step + 1))
+
+
+# Show "3 habits" just above a bar while the mouse is over its column
+def show_bar_value(chart, bar):
+    if bar["count"] == 1:
+        text = "1 habit"
+    else:
+        text = str(bar["count"]) + " habits"
+    top = bar["base"] - bar["height"]
+    # Center the label over the bar, but never let it stick out past the left or right edge of the chart
+    font = tkfont.Font(family="Arial", size=9, weight="bold")
+    half_width = font.measure(text) / 2 + 2
+    x = min(max(bar["left"] + BAR_WIDTH / 2, half_width), CHART_WIDTH - half_width)
+    # state="disabled": the label is drawn but ignores the mouse. Otherwise, on a short bar, the label would
+    # appear right under the pointer, count as "leaving" the column, get deleted, and reappear, forever
+    chart.create_text(x, top - 8, text=text, fill=theme.TEXT, font=font, tags="hover_label", state="disabled")
+
+
+# Hide the hover label again when the mouse leaves the column
+def hide_bar_value(chart):
+    chart.delete("hover_label")
+
+
+# Build a card with a bar chart of the last 7 days; return the card (the caller packs it)
+def draw_weekly_chart(parent, user_id):
+    card = tk.Frame(parent, bg=theme.CARD, highlightthickness=1, highlightbackground=theme.BORDER, padx=16, pady=16)
+
+    week = get_week_counts(user_id)
+    total = sum(count for day, count in week)
+
+    # Header: "This week" on the left, the total and best day on the right
+    header = tk.Frame(card, bg=theme.CARD)
+    header.pack(fill="x", pady=(0, 8))
+    title_label = tk.Label(header, text="This week", bg=theme.CARD, fg=theme.TEXT, font=("Arial", 12, "bold"))
+    title_label.pack(side="left")
+    if total == 0:
+        summary = "0 habits done"
+    else:
+        # max(..., key=...) picks the (day, count) pair with the biggest count
+        best_day, best_count = max(week, key=lambda pair: pair[1])
+        if total == 1:
+            word = "habit"
+        else:
+            word = "habits"
+        summary = str(total) + " " + word + " done · Best day: " + best_day.strftime("%A")
+    summary_label = tk.Label(header, text=summary, bg=theme.CARD, fg=theme.MUTED, font=("Arial", 10))
+    summary_label.pack(side="right", padx=(20, 0))
+
+    chart = tk.Canvas(card, width=CHART_WIDTH, height=CHART_HEIGHT, bg=theme.CARD, highlightthickness=0)
+    chart.pack()
+
+    base = CHART_HEIGHT - CHART_BOTTOM          # the y of the bottom of the bars (the 0% line)
+    plot_height = base - CHART_TOP              # how tall a 100% bar is
+    # A full bar means every habit was done; max(1, ...) avoids dividing by 0 when there are no habits
+    habit_count = max(1, len(database.get_all_habits(user_id)))
+
+    # Guide lines at 0%, 50% and 100%
+    for fraction in (0, 0.5, 1):
+        y = base - plot_height * fraction
+        chart.create_line(0, y, CHART_WIDTH, y, fill=theme.BORDER)
+
+    slot_width = CHART_WIDTH / 7
+    bars = []
+    for i in range(7):
+        day, count = week[i]
+        is_today = i == 6
+        left = i * slot_width + (slot_width - BAR_WIDTH) / 2
+        column_tag = "column" + str(i)
+
+        # An invisible (card-colored) rectangle covering the whole column, so even a short bar is easy to hover
+        chart.create_rectangle(i * slot_width, CHART_TOP, (i + 1) * slot_width, base, fill=theme.CARD, outline="", tags=(column_tag, "slot"))
+
+        # Today's bar and day name are in the accent color, the other days in the heatmap blue
+        if is_today:
+            color = theme.ACCENT
+            label_color = theme.ACCENT
+        else:
+            color = theme.HEATMAP[3]
+            label_color = theme.MUTED
+        # Start flat (the grow animation gives it its height); count / habits of the plot height, at most 100%
+        item = chart.create_polygon(rounded_top_points(left, base, left + BAR_WIDTH, base, 0), smooth=True, fill=color, outline="", tags=column_tag)
+        bar = {"item": item, "left": left, "base": base, "count": count, "height": plot_height * min(1, count / habit_count)}
+        bars.append(bar)
+
+        chart.create_text(left + BAR_WIDTH / 2, base + 12, text=day.strftime("%a"), fill=label_color, font=("Arial", 9))
+
+        chart.tag_bind(column_tag, "<Enter>", lambda event, bar=bar: show_bar_value(chart, bar))
+        chart.tag_bind(column_tag, "<Leave>", lambda event: hide_bar_value(chart))
+
+    # Push the invisible column rectangles to the very back, so the guide lines show on top of them
+    chart.tag_lower("slot")
+
+    grow_bars(chart, bars, 1)
+    return card
+
+
 if __name__ == "__main__":
     database.create_tables()
 
@@ -216,6 +369,7 @@ if __name__ == "__main__":
     window.configure(bg=theme.BG, padx=20, pady=20)
 
     canvas, info_label = create_heatmap_section(window, user_id)
+    draw_weekly_chart(window, user_id).pack(pady=(10, 0))
     create_stats_section(window, user_id)
 
     # A test button that redraws the heatmap, like main.py will do after a checkbox is ticked

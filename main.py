@@ -35,14 +35,14 @@ def show_welcome():
     show_page(lambda parent: welcome.build_welcome_page(parent, show_signup, show_login, show_signup))
 
 
-# Open the auth page in Log In mode; a correct login calls on_login
+# Open the auth page in Log In mode; a correct login calls on_login, "Back to home" opens the Welcome page
 def show_login():
-    show_page(lambda parent: auth.build_auth_page(parent, on_login, "login"))
+    show_page(lambda parent: auth.build_auth_page(parent, on_login, "login", on_back=show_welcome))
 
 
 # Open the auth page in Sign Up mode
 def show_signup():
-    show_page(lambda parent: auth.build_auth_page(parent, on_login, "signup"))
+    show_page(lambda parent: auth.build_auth_page(parent, on_login, "signup", on_back=show_welcome))
 
 
 # Remember who logged in, then open the Dashboard
@@ -93,9 +93,16 @@ def show_tab(tab_name, content, buttons):
     if tab_name == "today":
         gui.create_habit_section(content, app["user_id"])
     else:
+        # Rebuilt every time the tab is opened, so the heatmap, weekly chart and stats always show fresh data
         heatmap_holder = tk.Frame(content, bg=theme.BG)
-        heatmap_holder.pack(pady=40)
-        heatmap.create_heatmap_section(heatmap_holder, app["user_id"])
+        heatmap_holder.pack(pady=30)
+        # Top row: the 90-day heatmap on the left, this week's bar chart next to it
+        top_row = tk.Frame(heatmap_holder, bg=theme.BG)
+        top_row.pack()
+        heatmap_column = tk.Frame(top_row, bg=theme.BG)
+        heatmap_column.pack(side="left", anchor="n")
+        heatmap.create_heatmap_section(heatmap_column, app["user_id"])
+        heatmap.draw_weekly_chart(top_row, app["user_id"]).pack(side="left", anchor="n", padx=(24, 0), pady=10)
         heatmap.create_stats_section(heatmap_holder, app["user_id"])
 
 
