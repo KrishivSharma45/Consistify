@@ -6,8 +6,14 @@ BG = "#1a1b26"
 # cards, sidebar, navbar
 CARD = "#24283b"
 
-# borders, grid lines
+# borders
 BORDER = "#414868"
+
+# grid line color, a bit lighter than BG so the lines are visible but still soft
+GRID = "#2a2e42"
+
+# space between grid lines in pixels
+GRID_SIZE = 32
 
 # main text
 TEXT = "#c0caf5"

@@ -61,6 +61,10 @@ def rounded_button(parent, text, command, style="filled", width=None, height=Non
     if style == "filled":
         normal = (theme.ACCENT, theme.ACCENT, theme.BG)
         hover = (theme.ACCENT_HOVER, theme.ACCENT_HOVER, theme.BG)
+    elif style == "danger":
+        # A ghost button in the error color, which fills in red under the mouse (for destructive actions)
+        normal = ("", theme.ERROR, theme.ERROR)
+        hover = (theme.ERROR, theme.ERROR, theme.BG)
     else:
         # "ghost": an empty fill ("") lets the background show through, leaving only the outline
         normal = ("", theme.TEXT, theme.TEXT)
@@ -90,6 +94,33 @@ def icon_tile(parent, emoji, size=36, radius=8):
     points = rounded_rectangle_points(1, 1, size - 2, size - 2, radius)
     canvas.create_polygon(points, smooth=True, fill=theme.BG, outline=theme.BORDER)
     canvas.create_text(size / 2, size / 2, text=emoji, font=(theme.FONT, int(size / 3)))
+    return canvas
+
+
+# Draw the grid lines on a canvas: a vertical line every GRID_SIZE pixels across, a horizontal one every GRID_SIZE down
+def draw_grid_lines(canvas, width, height, tags="grid"):
+    for x in range(0, int(width) + 1, theme.GRID_SIZE):
+        canvas.create_line(x, 0, x, height, fill=theme.GRID, width=1, tags=tags)
+    for y in range(0, int(height) + 1, theme.GRID_SIZE):
+        canvas.create_line(0, y, width, y, fill=theme.GRID, width=1, tags=tags)
+
+
+# Wipe the old lines and draw them again at the canvas's new size
+def redraw_grid(canvas, event):
+    canvas.delete("grid")
+    draw_grid_lines(canvas, event.width, event.height)
+
+
+# Put a grid-paper background behind everything in the parent and return its canvas
+def draw_grid_background(parent):
+    canvas = tk.Canvas(parent, bg=theme.BG, highlightthickness=0)
+    # relwidth/relheight=1: the canvas is always exactly as big as the parent, even after a resize
+    canvas.place(x=0, y=0, relwidth=1, relheight=1)
+    # Send it below every other widget in the parent. For a Canvas, canvas.lower() lowers a drawing
+    # *inside* the canvas, so we call the general widget version, tk.Misc.lower, on it instead
+    tk.Misc.lower(canvas)
+    # The canvas follows the parent's size, so when the parent is resized the canvas gets a <Configure> too
+    canvas.bind("<Configure>", lambda event: redraw_grid(canvas, event))
     return canvas
 
 

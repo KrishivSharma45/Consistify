@@ -160,24 +160,25 @@ def toggle_password(entry, eye):
         eye.config(fg=theme.ACCENT)
 
 
-# Create a small uppercase label and an entry box with a 1px outline (plus an 👁 toggle for passwords)
-def create_field(form, label_text, is_password=False):
-    field = tk.Frame(form, bg=theme.BG)
+# Create a small uppercase label and an entry box with a 1px outline (plus an 👁 toggle for passwords).
+# bg is the color behind the label, entry_bg the color inside the box (other pages can put fields on a card)
+def create_field(form, label_text, is_password=False, bg=theme.BG, entry_bg=theme.CARD):
+    field = tk.Frame(form, bg=bg)
     field.pack(fill="x", pady=(0, 14))
 
-    label = tk.Label(field, text=label_text, font=(theme.FONT, 8, "bold"), fg=theme.MUTED, bg=theme.BG)
+    label = tk.Label(field, text=label_text, font=(theme.FONT, 8, "bold"), fg=theme.MUTED, bg=bg)
     label.pack(anchor="w", pady=(0, 4))
 
     # The outline is a frame 1 pixel bigger than what's inside it, so its color shows as a thin border
     outline = tk.Frame(field, bg=theme.BORDER)
     outline.pack(fill="x")
-    inside = tk.Frame(outline, bg=theme.CARD)
+    inside = tk.Frame(outline, bg=entry_bg)
     inside.pack(fill="x", padx=1, pady=1)
 
     entry = tk.Entry(
         inside,
         font=(theme.FONT, 12),
-        bg=theme.CARD,
+        bg=entry_bg,
         fg=theme.TEXT,
         insertbackground=theme.TEXT,
         relief="flat",
@@ -186,7 +187,7 @@ def create_field(form, label_text, is_password=False):
 
     if is_password:
         entry.config(show="•")
-        eye = tk.Label(inside, text="👁", font=(theme.FONT, 11), fg=theme.MUTED, bg=theme.CARD, cursor="hand2")
+        eye = tk.Label(inside, text="👁", font=(theme.FONT, 11), fg=theme.MUTED, bg=entry_bg, cursor="hand2")
         eye.pack(side="right", padx=10)
         eye.bind("<Button-1>", lambda event: toggle_password(entry, eye))
 
@@ -346,6 +347,8 @@ def build_auth_page(parent, on_login_success, start_mode="login", on_back=None):
     left.place(relx=0, rely=0, relwidth=0.5, relheight=1)
     right = tk.Frame(page_frame, bg=theme.BG)
     right.place(relx=0.5, rely=0, relwidth=0.5, relheight=1)
+    # Grid paper behind the form half only; the left (brand) half stays solid CARD
+    ui.draw_grid_background(right)
 
     build_left_half(left)
     page = build_right_half(right, on_login_success, on_back)

@@ -15,7 +15,6 @@ import theme
 import ui
 
 NAVBAR_HEIGHT = 56
-GRID_SIZE = 32       # size of one square of the background grid (pixels)
 HERO_TOP = 36        # space between the navbar and the pill badge at the top of the hero
 
 # Size settings for the decorative heatmap (in pixels)
@@ -54,14 +53,6 @@ TYPE_DELAY = 90      # milliseconds between typed letters
 DELETE_DELAY = 45    # milliseconds between deleted letters (deleting is faster than typing)
 TYPE_PAUSE = 1400    # how long a finished habit stays on screen before it is deleted
 NEXT_PAUSE = 400     # short pause on the empty line before the next habit starts
-
-
-# Draw faint vertical and horizontal lines every GRID_SIZE pixels, like graph paper
-def draw_grid(canvas, width, height):
-    for x in range(0, int(width), GRID_SIZE):
-        canvas.create_line(x, 0, x, height, fill=theme.BORDER, tags="grid")
-    for y in range(0, int(height), GRID_SIZE):
-        canvas.create_line(0, y, width, y, fill=theme.BORDER, tags="grid")
 
 
 # Draw several pieces of text side by side on a canvas, each in its own color; return the total width
@@ -248,6 +239,10 @@ def type_step(canvas, state):
     # Stop for good once the page has been closed
     if not canvas.winfo_exists():
         return
+    # The page hasn't been drawn yet (e.g. the window isn't on screen), so there is nothing to type into: try again soon
+    if "typed_item" not in state:
+        canvas.winfo_toplevel().after(TYPE_DELAY, lambda: type_step(canvas, state))
+        return
 
     typing = state["typing"]
     habit = TYPE_HABITS[typing["habit"]]
@@ -275,8 +270,8 @@ def type_step(canvas, state):
 
 # Draw a rectangle with rounded corners (a "pill" when radius is half its height)
 def draw_rounded_rectangle(canvas, x1, y1, x2, y2, radius, fill, outline):
-    # Each corner is listed 3 times; smooth=True bends the outline into curves through these points,
-    # which rounds the corners while keeping the straight edges straight
+    # Each corner is one point, with a point `radius` away along each edge on either side; smooth=True
+    # bends the outline into a curve around each corner, while the straight edges stay straight
     points = [
         x1 + radius, y1, x2 - radius, y1, x2, y1, x2, y1 + radius,
         x2, y2 - radius, x2, y2, x2 - radius, y2, x1 + radius, y2,
@@ -735,8 +730,10 @@ def draw_page(canvas, state, event):
     y = draw_features(canvas, state, y, width)
     state["page_height"] = y
 
-    # The grid is drawn last but pushed to the very back; the card boxes go just above it
-    draw_grid(canvas, width, y)
+    # The grid (the same one every page uses, from ui.py) is drawn on this scroll canvas so it scrolls with the
+    # page. It covers the whole page height (or the window, if that's taller), then is pushed to the very back,
+    # with the card boxes just above it
+    ui.draw_grid_lines(canvas, width, max(y, event.height))
     canvas.tag_lower("card")
     canvas.tag_lower("grid")
 
@@ -746,10 +743,10 @@ def draw_page(canvas, state, event):
 
 # Clear the navbar and draw it again: logo on the left, links in the middle, buttons on the right
 def draw_navbar(navbar, canvas, state, event):
+    # The navbar keeps a solid CARD background (no grid), like the other cards
     navbar.delete("all")
     width = event.width
     middle_y = NAVBAR_HEIGHT / 2
-    draw_grid(navbar, width, NAVBAR_HEIGHT)
 
     # Clicking the logo scrolls back to the top
     draw_logo(navbar, state, 30, middle_y)

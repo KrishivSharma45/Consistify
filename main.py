@@ -9,6 +9,7 @@ import gui
 import heatmap
 import settings
 import theme
+import ui
 import welcome
 
 WINDOW_WIDTH = 1100
@@ -96,6 +97,8 @@ def show_tab(tab_name, content, buttons):
 
     for child in content.winfo_children():
         child.destroy()
+    # Clearing the content area also removed its grid background, so put a fresh one behind the new page
+    ui.draw_grid_background(content)
 
     if tab_name == "today":
         gui.create_habit_section(content, app["user_id"])
