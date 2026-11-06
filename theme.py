@@ -1,40 +1,37 @@
-# theme.py - all colors and fonts for Consistify (Tokyo Night theme)
+# theme.py - all colors and fonts for Consistify (Dark Navy theme)
 
-# page background
-BG = "#1a1b26"
+# page background (dark navy)
+BG = "#0a1128"
 
 # cards, sidebar, navbar
-CARD = "#24283b"
+CARD = "#111a35"
 
 # borders
-BORDER = "#414868"
+BORDER = "#1f2b4d"
 
-# grid line color, a bit lighter than BG so the lines are visible but still soft
-GRID = "#2a2e42"
+# main text (light grey)
+TEXT = "#d1d5db"
 
-# space between grid lines in pixels
-GRID_SIZE = 32
-
-# main text
-TEXT = "#c0caf5"
-
-# secondary text
-MUTED = "#9aa5ce"
+# secondary text (mid grey)
+MUTED = "#8b93a7"
 
 # buttons, highlights, logo
-ACCENT = "#7aa2f7"
+ACCENT = "#5b8def"
 
 # accent color when hovering
-ACCENT_HOVER = "#7dcfff"
+ACCENT_HOVER = "#7aa5ff"
 
 # error messages
-ERROR = "#f7768e"
+ERROR = "#f87171"
 
 # success messages
-SUCCESS = "#9ece6a"
+SUCCESS = "#4ade80"
 
 # heatmap shades: 0, 1, 2, 3, 4+ habits done
-HEATMAP = ["#24283b", "#39466a", "#4f6599", "#6483c8", "#7aa2f7"]
+HEATMAP = ["#111a35", "#1e3a6e", "#2f5aa8", "#4577d4", "#5b8def"]
+
+# grid lines (subtle navy)
+GRID = "#131d3b"
 
 # main font
 FONT = "Segoe UI"
