@@ -47,6 +47,26 @@ FLOAT_TIMINGS = [(0.045, 0.0), (0.032, 1.7), (0.053, 3.1), (0.038, 4.6)]
 # Features section ("bento grid")
 BENTO_MAX_WIDTH = 900     # the grid is never wider than this
 
+# "Why habits matter" section
+WHY_INTRO = [
+    "Habits run much of your day without you noticing,",
+    "so the small actions you repeat quietly shape who you become.",
+]
+# (number to count up to, text after it, title, one line)
+WHY_STATS = [
+    (66, " days", "to build a habit", "Average time for a new habit to feel automatic (UCL study, 2009)."),
+    (37, "x", "better in a year", "Improve just 1% a day and it compounds: 1.01^365 ≈ 37."),
+    (2, " days", "never miss twice", "Missing once is human. Missing twice starts a new habit."),
+]
+WHY_STEPS = [
+    ("Add a habit", "Pick something small you want to do daily."),
+    ("Tick it daily", "One click. Watch your streak grow 🔥"),
+    ("See your progress", "Heatmaps, charts and badges keep you going."),
+]
+WHY_QUOTE = ("We are what we repeatedly do. Excellence, then, is not an act, but a habit.", "Will Durant")
+WHY_SLIDE = 24       # the cards start this many pixels lower and slide up into place
+WHY_VISIBLE = 120    # how many pixels of the section must be on screen before it is revealed
+
 # Typewriter animation settings
 TYPE_HABITS = ["Read 10 pages", "Hit the gym", "Solve 1 LeetCode problem", "Drink 3L water"]
 TYPE_DELAY = 90      # milliseconds between typed letters
@@ -134,6 +154,12 @@ def on_page_scroll(navbar, canvas, state, first, last):
         state["active_section"] = active
         for name in state["links"]:
             paint_link(navbar, state["links"][name], name == active)
+
+    # last is how far down the page the BOTTOM of the view is; once it passes the top of the "why" cards
+    # (plus a bit, so some of them really show), reveal them, but only the first time
+    view_bottom = float(last) * state["page_height"]
+    if not state["why_shown"] and "why" in sections and view_bottom >= sections["why"] + WHY_VISIBLE:
+        reveal_why(canvas, state)
 
 
 # Draw the logo: a tiny 2x2 grid of heatmap squares, then "Consistify"
@@ -572,7 +598,71 @@ def animate_floating(canvas, state):
     canvas.winfo_toplevel().after(FLOAT_DELAY, lambda: animate_floating(canvas, state))
 
 
-# Draw the About section starting at y = top; return the y where it ends
+# Build one stat card for "Why habits matter": a huge number (it counts up later), a short title and one line
+def create_why_stat(row, column, suffix, title, line):
+    card = ui.create_card(row)
+    card.grid(row=0, column=column, sticky="nsew", padx=8)
+    # Starts at 0; count_up_why() counts it up to its real value when the section scrolls into view
+    number = tk.Label(card, text="0" + suffix, font=(theme.FONT, 34, "bold"), fg=theme.ACCENT, bg=theme.CARD)
+    number.pack(anchor="w")
+    tk.Label(card, text=title, font=(theme.FONT, 13, "bold"), fg=theme.TEXT, bg=theme.CARD).pack(anchor="w")
+    tk.Label(card, text=line, font=(theme.FONT, 10), fg=theme.MUTED, bg=theme.CARD, wraplength=230, justify="left").pack(anchor="w", pady=(6, 0))
+    return number
+
+
+# Build one "How it works" step card: a numbered accent circle, a title and one line
+def create_why_step(row, column, number, title, line):
+    card = ui.create_card(row)
+    card.grid(row=0, column=column, sticky="nsew")
+    circle = tk.Canvas(card, width=34, height=34, bg=theme.CARD, highlightthickness=0)
+    circle.create_oval(1, 1, 33, 33, fill=theme.ACCENT, outline="")
+    circle.create_text(17, 17, text=str(number), fill=theme.BG, font=(theme.FONT, 12, "bold"))
+    circle.pack(anchor="w")
+    tk.Label(card, text=title, font=(theme.FONT, 12, "bold"), fg=theme.TEXT, bg=theme.CARD).pack(anchor="w", pady=(10, 0))
+    tk.Label(card, text=line, font=(theme.FONT, 10), fg=theme.MUTED, bg=theme.CARD, wraplength=200, justify="left").pack(anchor="w")
+
+
+# Build the "Why habits matter" widgets once (stat cards, how-it-works steps, quote); return their parts
+def create_why_section(canvas):
+    section = tk.Frame(canvas, bg=theme.BG)
+
+    # 1) Three stat cards side by side; each number remembers where it counts up to
+    stats = tk.Frame(section, bg=theme.BG)
+    stats.pack(fill="x")
+    for column in range(3):
+        stats.columnconfigure(column, weight=1, uniform="why")
+    numbers = []
+    for column in range(3):
+        target, suffix, title, line = WHY_STATS[column]
+        label = create_why_stat(stats, column, suffix, title, line)
+        numbers.append((label, target, suffix))
+
+    # 2) "How it works": three step cards joined by thin BORDER lines
+    tk.Label(section, text="How it works", font=(theme.FONT, 16, "bold"), fg=theme.TEXT, bg=theme.BG).pack(pady=(28, 12))
+    steps = tk.Frame(section, bg=theme.BG)
+    steps.pack(fill="x", padx=8)
+    # Columns 0, 2 and 4 are the cards (equal width); 1 and 3 are the short connecting lines between them
+    for column in (0, 2, 4):
+        steps.columnconfigure(column, weight=1, uniform="step")
+    for column in (1, 3):
+        steps.columnconfigure(column, minsize=36)
+        # A 1px-tall frame stretched across its column (sticky "ew") and centered top-to-bottom: a connecting line
+        tk.Frame(steps, bg=theme.BORDER, height=1).grid(row=0, column=column, sticky="ew")
+    for i in range(3):
+        title, line = WHY_STEPS[i]
+        create_why_step(steps, i * 2, i + 1, title, line)
+
+    # 3) The quote card
+    quote = ui.create_card(section)
+    quote.pack(fill="x", padx=8, pady=(28, 0))
+    tk.Label(quote, text="“", font=(theme.FONT, 48, "bold"), fg=theme.ACCENT, bg=theme.CARD).pack(anchor="w")
+    tk.Label(quote, text=WHY_QUOTE[0], font=(theme.FONT, 14, "italic"), fg=theme.TEXT, bg=theme.CARD, wraplength=700, justify="left").pack(anchor="w")
+    tk.Label(quote, text="— " + WHY_QUOTE[1], font=(theme.FONT, 10), fg=theme.MUTED, bg=theme.CARD).pack(anchor="w", pady=(8, 0))
+
+    return {"frame": section, "numbers": numbers}
+
+
+# Draw the About section starting at y = top: heading, a 2-line intro, then the "why" widgets; return where it ends
 def draw_about(canvas, state, top, width):
     heading_font = state["fonts"]["heading"]
     y = top + 60
@@ -580,19 +670,40 @@ def draw_about(canvas, state, top, width):
 
     heading_height = heading_font.metrics("linespace")
     draw_mixed_text(canvas, width / 2, y + heading_height / 2, [("Why ", theme.ACCENT), ("habits", theme.TEXT), (" matter", theme.ACCENT)], heading_font)
-    y = y + heading_height + 20
+    y = y + heading_height + 16
 
-    lines = [
-        "Consistify is a simple desktop habit tracker: tick off your habits each day and watch them add up.",
-        "Small actions repeated every day beat big bursts of motivation.",
-        "Seeing your streak grow makes it easier to keep going tomorrow.",
-    ]
-    for line in lines:
-        # width=900 wraps a long line onto a second line instead of running off the window
-        item = canvas.create_text(width / 2, y, text=line, fill=theme.MUTED, font=(theme.FONT, 13), width=900, justify="center", anchor="n")
-        y = canvas.bbox(item)[3] + 6
+    for line in WHY_INTRO:
+        item = canvas.create_text(width / 2, y, text=line, fill=theme.MUTED, font=(theme.FONT, 13), justify="center", anchor="n")
+        y = canvas.bbox(item)[3] + 4
+    y = y + 28
 
-    return y + 20
+    # Place the "why" widgets (built once in build_welcome_page), centered and at most BENTO_MAX_WIDTH wide.
+    # Until the section has been revealed, they sit WHY_SLIDE pixels lower, ready to slide up into place
+    why = state["why"]
+    if state["why_shown"]:
+        offset = 0
+    else:
+        offset = WHY_SLIDE
+    state["why_x"] = width / 2
+    state["why_y"] = y
+    state["why_item"] = canvas.create_window(width / 2, y + offset, window=why["frame"], anchor="n", width=min(BENTO_MAX_WIDTH, width - 80))
+    # update_idletasks lets tkinter finish laying out the widgets, so their height is known
+    why["frame"].update_idletasks()
+    state["sections"]["why"] = y
+    return y + why["frame"].winfo_reqheight() + 20
+
+
+# Move the "why" widgets to `progress` (0 to 1) of the way from their lower starting spot up to their real spot
+def slide_why(canvas, state, progress):
+    canvas.coords(state["why_item"], state["why_x"], state["why_y"] + WHY_SLIDE * (1 - progress))
+
+
+# The first time the section is on screen: slide the cards up into place and count the big numbers up from 0
+def reveal_why(canvas, state):
+    state["why_shown"] = True
+    ui.animate(canvas, lambda progress: slide_why(canvas, state, progress), steps=24)
+    for label, target, suffix in state["why"]["numbers"]:
+        ui.animate(label, lambda progress, label=label, target=target, suffix=suffix: label.config(text=str(round(target * progress)) + suffix), steps=50)
 
 
 # Draw a grid of little squares that gets brighter from left to right, like progress growing
@@ -806,6 +917,9 @@ def build_welcome_page(parent, on_get_started, on_login, on_signup):
         "float_frame": 0,
         # The features grid is made of real widgets, so it is built once here and only re-placed on redraw
         "bento": create_bento(canvas),
+        # The "Why habits matter" widgets (built once too), and whether they have slid in / counted up yet
+        "why": create_why_section(canvas),
+        "why_shown": False,
         # Which habit the typewriter is on, how many of its letters are showing, and whether it is deleting
         "typing": {"habit": 0, "letters": 0, "deleting": False},
     }

@@ -1,28 +1,38 @@
 import tkinter as tk
-# Import tkinter's font tool, so the hover label can measure itself and stay inside the chart
-import tkinter.font as tkfont
+# Import math for cos and sin, which find the middle of each donut slice
+import math
 from datetime import date, timedelta
 
 import database
-# Import the app's shared colors and font
+# Import the app's shared colors and font, and our reusable widgets (cards, rings, pills, scroll page)
 import theme
+import ui
 
-# Size settings for the heatmap (in pixels)
-SQUARE_SIZE = 14
-GAP = 3
+# 90-day heatmap
 NUMBER_OF_DAYS = 90
-LEFT_MARGIN = 30
-TOP_MARGIN = 20
+HEAT_LEFT = 32         # space on the left for "Mon", "Wed", "Fri"
+HEAT_TOP = 18          # space on top for the month names
+HEAT_GAP = 3           # space between squares
+LEGEND_HEIGHT = 28     # space under the grid for "Less [] More"
 
-# Size settings for the weekly bar chart (in pixels)
+# Weekly bar chart (in pixels)
 CHART_WIDTH = 420
 CHART_HEIGHT = 170
-CHART_TOP = 26       # space above the tallest bar, for the hover label
+CHART_TOP = 26       # space above the tallest bar, for its value
 CHART_BOTTOM = 22    # space under the bars, for the day names
 BAR_WIDTH = 28
 BAR_RADIUS = 10      # how round the top corners of a bar are (smoothing curves about half of this)
 GROW_STEPS = 20      # the grow animation takes 20 steps...
 GROW_DELAY = 20      # ...20 milliseconds apart, so about 400 ms in total
+
+# Donut chart and consistency ring (in pixels)
+DONUT_SIZE = 170     # outer diameter of the donut
+DONUT_HOLE = 0.62    # the hole is 62% as wide as the donut
+DONUT_POP = 7        # how far a slice moves outward when hovered
+RING_SIZE = 150      # outer diameter of the consistency ring
+RING_THICKNESS = 14
+# Slice colors, used in this order: the accent, its lighter hover color, then the heatmap shades strongest to weakest
+DONUT_COLORS = [theme.ACCENT, theme.ACCENT_HOVER, theme.HEATMAP[3], theme.HEATMAP[2], theme.HEATMAP[1], theme.MUTED]
 
 
 # Return the color for a given number of habits done in one day (theme.HEATMAP holds the 5 shades)
@@ -49,7 +59,7 @@ def show_day(info_label, date_text, count, user_id):
 
     names = database.get_habits_done_on(date_text, user_id)
     if len(names) > 0:
-        text = text + "\n" + ", ".join(names)
+        text = text + "  ·  " + ", ".join(names)
 
     info_label.config(text=text)
 
@@ -59,112 +69,6 @@ def set_cursor(canvas, cursor_name):
     canvas.config(cursor=cursor_name)
 
 
-# Return the top-left (x, y) of a day's square: its row is its weekday, its column is its week
-def get_square_position(day, first_day):
-    days_since_start = (day - first_day).days
-    column = (days_since_start + first_day.weekday()) // 7
-    row = day.weekday()
-
-    x = LEFT_MARGIN + column * (SQUARE_SIZE + GAP)
-    y = TOP_MARGIN + row * (SQUARE_SIZE + GAP)
-    return x, y
-
-
-# Write "Mon", "Wed" and "Fri" to the left of their rows
-def draw_weekday_labels(canvas):
-    for row, name in [(0, "Mon"), (2, "Wed"), (4, "Fri")]:
-        middle = TOP_MARGIN + row * (SQUARE_SIZE + GAP) + SQUARE_SIZE / 2
-        canvas.create_text(0, middle, text=name, fill=theme.MUTED, font=("Arial", 9), anchor="w")
-
-
-# Draw the "Less [5 color boxes] More" legend under the grid
-def draw_legend(canvas):
-    top = TOP_MARGIN + 7 * (SQUARE_SIZE + GAP) + 10
-    middle = top + SQUARE_SIZE / 2
-
-    canvas.create_text(LEFT_MARGIN, middle, text="Less", fill=theme.MUTED, font=("Arial", 9), anchor="w")
-
-    for level in range(5):
-        x1 = LEFT_MARGIN + 30 + level * (SQUARE_SIZE + GAP)
-        canvas.create_rectangle(x1, top, x1 + SQUARE_SIZE, top + SQUARE_SIZE, fill=get_color(level), outline="")
-
-    more_x = LEFT_MARGIN + 30 + 5 * (SQUARE_SIZE + GAP) + 3
-    canvas.create_text(more_x, middle, text="More", fill=theme.MUTED, font=("Arial", 9), anchor="w")
-
-
-# Draw one clickable square per day for the last 90 days, one row per weekday
-def draw_heatmap(canvas, counts, info_label, user_id):
-    today = date.today()
-    first_day = today - timedelta(days=NUMBER_OF_DAYS - 1)
-
-    for i in range(NUMBER_OF_DAYS):
-        day = first_day + timedelta(days=i)
-        date_text = day.strftime("%Y-%m-%d")
-        count = counts.get(date_text, 0)
-
-        x1, y1 = get_square_position(day, first_day)
-        x2 = x1 + SQUARE_SIZE
-        y2 = y1 + SQUARE_SIZE
-
-        # Give today's square a light border so it is easy to find
-        if day == today:
-            border = theme.TEXT
-        else:
-            border = ""
-
-        square = canvas.create_rectangle(x1, y1, x2, y2, fill=get_color(count), outline=border)
-        canvas.tag_bind(square, "<Button-1>", lambda event, d=date_text, c=count: show_day(info_label, d, c, user_id))
-        canvas.tag_bind(square, "<Enter>", lambda event: set_cursor(canvas, "hand2"))
-        canvas.tag_bind(square, "<Leave>", lambda event: set_cursor(canvas, ""))
-
-        # On the 1st of a month, write the month name ("Sep", "Oct") above that column
-        if day.day == 1:
-            canvas.create_text(x1, TOP_MARGIN - 10, text=day.strftime("%b"), fill=theme.MUTED, font=("Arial", 9), anchor="w")
-
-    draw_weekday_labels(canvas)
-    draw_legend(canvas)
-
-
-# Ask the database how many of one user's habits were done on each of the last 90 days
-def get_counts_from_database(user_id):
-    counts = {}
-    today = date.today()
-
-    for days_ago in range(NUMBER_OF_DAYS):
-        day = today - timedelta(days=days_ago)
-        date_text = day.strftime("%Y-%m-%d")
-        counts[date_text] = database.get_count_for_date(date_text, user_id)
-
-    return counts
-
-
-# Wipe the canvas and redraw the heatmap with fresh numbers from the database
-def refresh_heatmap(canvas, info_label, user_id):
-    canvas.delete("all")
-    counts = get_counts_from_database(user_id)
-    draw_heatmap(canvas, counts, info_label, user_id)
-
-
-# Build the whole heatmap section (title, grid, info label) for one user inside any window or frame
-def create_heatmap_section(parent, user_id):
-    section = tk.Frame(parent, bg=theme.BG)
-    section.pack(pady=10)
-
-    title_label = tk.Label(section, text="Last 90 days", bg=theme.BG, fg=theme.TEXT, font=("Arial", 12, "bold"))
-    title_label.pack(anchor="w")
-
-    # 280 x 180 fits the weekday labels, up to 14 week columns, the month labels and the legend
-    canvas = tk.Canvas(section, width=280, height=180, bg=theme.BG, highlightthickness=0)
-    canvas.pack()
-
-    # wraplength=260 moves long text onto a new line instead of stretching the window
-    info_label = tk.Label(section, text="Click a square to see details", bg=theme.BG, fg=theme.TEXT, font=("Arial", 10), wraplength=260)
-    info_label.pack()
-
-    refresh_heatmap(canvas, info_label, user_id)
-    return canvas, info_label
-
-
 # Turn a number of days into text: "1 day" or "5 days"
 def day_text(number):
     if number == 1:
@@ -172,49 +76,66 @@ def day_text(number):
     return str(number) + " days"
 
 
-# Build a table with each habit's current streak, best streak and 30-day completion %
-def create_stats_section(parent, user_id):
-    section = tk.Frame(parent, bg=theme.CARD, highlightbackground=theme.BORDER, highlightthickness=1, padx=20, pady=15)
-    section.pack(fill="x", pady=(15, 0))
+# ---------------------------------------------------------------- data
 
-    title_label = tk.Label(section, text="Stats", bg=theme.CARD, fg=theme.TEXT, font=("Arial", 12, "bold"))
-    title_label.pack(anchor="w", pady=(0, 8))
+# Ask the database how many of one user's habits were done on each of the last 90 days: {"2026-11-07": 2, ...}
+def get_counts_from_database(user_id):
+    counts = {}
+    today = date.today()
+    for days_ago in range(NUMBER_OF_DAYS):
+        day = today - timedelta(days=days_ago)
+        counts[day.isoformat()] = database.get_count_for_date(day.isoformat(), user_id)
+    return counts
 
-    habits = database.get_all_habits(user_id)
-    if len(habits) == 0:
-        empty_label = tk.Label(section, text="No habits yet. Add some on the Today tab.", bg=theme.CARD, fg=theme.MUTED, font=("Arial", 10))
-        empty_label.pack(anchor="w")
-        return section
 
-    # A grid of labels: row 0 holds the headings, then one row per habit
-    table = tk.Frame(section, bg=theme.CARD)
-    table.pack(anchor="w")
+# Count every check-in (log row) this user has ever made. database.py has no function for this, and it must not
+# be changed, so this only READS, with a ? placeholder, through database.get_connection
+def get_total_checkins(user_id):
+    conn = database.get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT COUNT(*) FROM logs JOIN habits ON habits.id = logs.habit_id WHERE habits.user_id = ?",
+        (user_id,),
+    )
+    total = cursor.fetchone()[0]
+    conn.close()
+    return total
 
-    headings = ["Habit", "Current streak", "Best streak", "Last 30 days"]
-    for column in range(len(headings)):
-        heading_label = tk.Label(table, text=headings[column], bg=theme.CARD, fg=theme.MUTED, font=("Arial", 9, "bold"))
-        heading_label.grid(row=0, column=column, sticky="w", padx=(0, 30), pady=(0, 6))
 
-    row = 1
-    for habit_id, name in habits:
-        values = [
-            name,
-            day_text(database.get_streak(habit_id)),
-            day_text(database.get_best_streak(habit_id)),
-            str(database.get_completion_percent(habit_id)) + "%",
-        ]
-        for column in range(len(values)):
-            # The percent column is in the accent color so it stands out
-            if column == 3:
-                color = theme.ACCENT
-            else:
-                color = theme.TEXT
-            value_label = tk.Label(table, text=values[column], bg=theme.CARD, fg=color, font=("Arial", 10))
-            value_label.grid(row=row, column=column, sticky="w", padx=(0, 30), pady=2)
-        row = row + 1
+# Return [(habit name, check-ins in the last 30 days), ...] for every habit of this user
+def get_habit_counts_30(user_id):
+    today = date.today()
+    result = []
+    for habit_id, name in database.get_all_habits(user_id):
+        count = 0
+        for days_ago in range(30):
+            if database.is_done(habit_id, (today - timedelta(days=days_ago)).isoformat()):
+                count = count + 1
+        result.append((name, count))
+    return result
 
-    return section
 
+# Return the highest best-ever streak among this user's habits (0 if there are none)
+def get_longest_streak(user_id):
+    best = 0
+    for habit_id, name in database.get_all_habits(user_id):
+        best = max(best, database.get_best_streak(habit_id))
+    return best
+
+
+# Return the last 7 days as a list of (date, count), oldest first and today last
+def get_week_counts(user_id):
+    today = date.today()
+    week = []
+    # days_ago goes 6, 5, 4, 3, 2, 1, 0, so the list starts 6 days ago and ends with today
+    for days_ago in range(6, -1, -1):
+        day = today - timedelta(days=days_ago)
+        count = database.get_count_for_date(day.isoformat(), user_id)
+        week.append((day, count))
+    return week
+
+
+# ---------------------------------------------------------------- small heatmap (used by the Today page)
 
 # Draw a small heatmap of the last `days` days on an existing canvas: `columns` squares per row,
 # oldest at the top-left, today at the bottom-right with a light outline (wipes the canvas first, so it can redraw).
@@ -247,17 +168,173 @@ def create_mini_heatmap(parent, user_id, days=30, columns=6, square=24, gap=5, e
     return canvas
 
 
-# Return the last 7 days as a list of (date, count), oldest first and today last
-def get_week_counts(user_id):
-    today = date.today()
-    week = []
-    # days_ago goes 6, 5, 4, 3, 2, 1, 0, so the list starts 6 days ago and ends with today
-    for days_ago in range(6, -1, -1):
-        day = today - timedelta(days=days_ago)
-        count = database.get_count_for_date(day.isoformat(), user_id)
-        week.append((day, count))
-    return week
+# ---------------------------------------------------------------- 90-day heatmap card
 
+# Draw the 90-day heatmap with squares sized to fill the canvas width (called again whenever the card is resized)
+def draw_heatmap(canvas, counts, info_label, user_id):
+    canvas.delete("all")
+    width = canvas.winfo_width()
+    today = date.today()
+    first_day = today - timedelta(days=NUMBER_OF_DAYS - 1)
+    # One column per week; first_day.weekday() is how far into its week the first day falls
+    columns = (NUMBER_OF_DAYS - 1 + first_day.weekday()) // 7 + 1
+    # Each "cell" is a square plus its gap; the cells share the width left over after the weekday labels
+    cell = max(8, (width - HEAT_LEFT) / columns)
+    square = cell - HEAT_GAP
+
+    # Make the canvas exactly tall enough for 7 rows plus the month names and the legend
+    needed = int(HEAT_TOP + 7 * cell + LEGEND_HEIGHT)
+    if abs(int(canvas.cget("height")) - needed) > 1:
+        canvas.config(height=needed)
+
+    for i in range(NUMBER_OF_DAYS):
+        day = first_day + timedelta(days=i)
+        count = counts.get(day.isoformat(), 0)
+        # The row is the weekday (Mon = 0 at the top), the column is the week
+        column = (i + first_day.weekday()) // 7
+        x1 = HEAT_LEFT + column * cell
+        y1 = HEAT_TOP + day.weekday() * cell
+        # Empty days use BORDER, because HEATMAP[0] is the same color as the card
+        if count > 0:
+            color = get_color(count)
+        else:
+            color = theme.BORDER
+        if day == today:
+            square_item = canvas.create_rectangle(x1, y1, x1 + square, y1 + square, fill=color, outline=theme.ACCENT, width=2)
+        else:
+            square_item = canvas.create_rectangle(x1, y1, x1 + square, y1 + square, fill=color, outline="")
+        canvas.tag_bind(square_item, "<Button-1>", lambda event, d=day.isoformat(), c=count: show_day(info_label, d, c, user_id))
+        canvas.tag_bind(square_item, "<Enter>", lambda event: set_cursor(canvas, "hand2"))
+        canvas.tag_bind(square_item, "<Leave>", lambda event: set_cursor(canvas, ""))
+
+        # Month names above the column of each month's first day (and above the very first column)
+        if day.day == 1 or i == 0:
+            canvas.create_text(x1, HEAT_TOP - 9, text=day.strftime("%b"), fill=theme.MUTED, font=(theme.FONT, 8), anchor="w")
+
+    for row, name in [(0, "Mon"), (2, "Wed"), (4, "Fri")]:
+        canvas.create_text(0, HEAT_TOP + row * cell + square / 2, text=name, fill=theme.MUTED, font=(theme.FONT, 8), anchor="w")
+
+    # "Less [5 boxes] More" under the grid
+    legend_y = HEAT_TOP + 7 * cell + 8
+    canvas.create_text(HEAT_LEFT, legend_y + 6, text="Less", fill=theme.MUTED, font=(theme.FONT, 8), anchor="w")
+    legend_colors = [theme.BORDER, theme.HEATMAP[1], theme.HEATMAP[2], theme.HEATMAP[3], theme.HEATMAP[4]]
+    for level in range(5):
+        x1 = HEAT_LEFT + 32 + level * 15
+        canvas.create_rectangle(x1, legend_y, x1 + 12, legend_y + 12, fill=legend_colors[level], outline="")
+    canvas.create_text(HEAT_LEFT + 32 + 5 * 15 + 4, legend_y + 6, text="More", fill=theme.MUTED, font=(theme.FONT, 8), anchor="w")
+
+
+# Build the "Last 90 days" card: the heatmap (it fills the card's width) and a line for the clicked day's details
+def create_heatmap_card(parent, user_id, counts):
+    card = ui.create_card(parent, "Last 90 days", "Click a square to see the habits done that day")
+    canvas = tk.Canvas(card, height=200, bg=theme.CARD, highlightthickness=0)
+    canvas.pack(fill="x")
+    info_label = tk.Label(card, text="", font=(theme.FONT, 9), fg=theme.MUTED, bg=theme.CARD, wraplength=420, justify="left")
+    info_label.pack(anchor="w", pady=(6, 0))
+    # The canvas's width is only known once it's on screen (and changes on resize), so draw it from <Configure>
+    canvas.bind("<Configure>", lambda event: draw_heatmap(canvas, counts, info_label, user_id))
+    return card
+
+
+# ---------------------------------------------------------------- donut card
+
+# Set every slice to `fraction` of its final size, so the donut sweeps in from 12 o'clock
+def set_donut_slices(canvas, slices, total, fraction):
+    done_so_far = 0
+    for piece in slices:
+        # Clockwise from the top: start at 90 degrees minus everything already drawn, extent negative
+        start = 90 - 360 * done_so_far / total * fraction
+        extent = -min(359.9, 360 * piece["count"] / total) * fraction
+        canvas.itemconfigure(piece["item"], start=start, extent=extent)
+        done_so_far = done_so_far + piece["count"]
+
+
+# Hovering a slice: slide it a few pixels outward (along its middle angle) and show its numbers
+def on_slice_enter(canvas, piece, label, total):
+    if piece["moved"]:
+        return
+    # The middle of the slice, in degrees: 0 is 3 o'clock and angles go counter-clockwise, like in maths
+    middle = math.radians(piece["middle"])
+    # cos gives the sideways part; the canvas's y grows DOWNWARDS, so the up/down part is minus sin
+    canvas.move(piece["item"], DONUT_POP * math.cos(middle), -DONUT_POP * math.sin(middle))
+    piece["moved"] = True
+    percent = round(piece["count"] * 100 / total)
+    label.config(text=piece["name"] + ": " + str(piece["count"]) + " (" + str(percent) + "%)", fg=theme.TEXT)
+
+
+# Leaving a slice: slide it back into place
+def on_slice_leave(canvas, piece, label):
+    if not piece["moved"]:
+        return
+    middle = math.radians(piece["middle"])
+    canvas.move(piece["item"], -DONUT_POP * math.cos(middle), DONUT_POP * math.sin(middle))
+    piece["moved"] = False
+    label.config(text="Hover a slice for details", fg=theme.MUTED)
+
+
+# Build the "Habit share" card: a donut with one slice per habit (check-ins in the last 30 days) and a legend
+def create_donut_card(parent, user_id):
+    card = ui.create_card(parent, "Habit share", "Check-ins per habit, last 30 days")
+    data = [(name, count) for name, count in get_habit_counts_30(user_id) if count > 0]
+    # Biggest slice first
+    data.sort(key=lambda pair: pair[1], reverse=True)
+    total = sum(count for name, count in data)
+
+    size = DONUT_SIZE + 2 * DONUT_POP
+    middle = size / 2
+    radius = DONUT_SIZE / 2
+    canvas = tk.Canvas(card, width=size, height=size, bg=theme.CARD, highlightthickness=0)
+    canvas.pack()
+
+    if total == 0:
+        # Empty state: just the grey ring and a message
+        ui.draw_ring(canvas, middle, middle, radius - 14, 28, 0)
+        canvas.create_text(middle, middle, text="No data yet", fill=theme.MUTED, font=(theme.FONT, 10))
+        tk.Label(card, text="Tick some habits and they'll show up here.", font=(theme.FONT, 9), fg=theme.MUTED, bg=theme.CARD).pack(pady=(8, 0))
+        return card
+
+    box = (middle - radius, middle - radius, middle + radius, middle + radius)
+    hover_label = tk.Label(card, text="Hover a slice for details", font=(theme.FONT, 9), fg=theme.MUTED, bg=theme.CARD)
+    slices = []
+    done_so_far = 0
+    for i in range(len(data)):
+        name, count = data[i]
+        color = DONUT_COLORS[i % len(DONUT_COLORS)]
+        # style="pieslice" draws a filled wedge from the centre; it starts with no size and grows in
+        item = canvas.create_arc(*box, start=90, extent=0, style="pieslice", fill=color, outline=theme.CARD, width=2)
+        # The final middle angle of this slice (used to push it outward on hover)
+        slice_middle = 90 - 360 * (done_so_far + count / 2) / total
+        piece = {"item": item, "name": name, "count": count, "middle": slice_middle, "moved": False}
+        slices.append(piece)
+        canvas.tag_bind(item, "<Enter>", lambda event, piece=piece: on_slice_enter(canvas, piece, hover_label, total))
+        canvas.tag_bind(item, "<Leave>", lambda event, piece=piece: on_slice_leave(canvas, piece, hover_label))
+        done_so_far = done_so_far + count
+
+    # The hole: a card-colored circle drawn on top of the middle of the pie turns it into a donut.
+    # state="disabled" so the hole never "steals" the mouse from the slices around it
+    hole = radius * DONUT_HOLE
+    canvas.create_oval(middle - hole, middle - hole, middle + hole, middle + hole, fill=theme.CARD, outline=theme.CARD, state="disabled")
+    canvas.create_text(middle, middle - 10, text=str(total), fill=theme.TEXT, font=(theme.FONT, 18, "bold"), state="disabled")
+    canvas.create_text(middle, middle + 18, text="check-ins", fill=theme.MUTED, font=(theme.FONT, 9), state="disabled")
+
+    hover_label.pack(pady=(6, 8))
+    # Legend: a colored dot, the habit name and its count, one line per slice
+    for i in range(len(data)):
+        name, count = data[i]
+        line = tk.Frame(card, bg=theme.CARD)
+        line.pack(fill="x", pady=1)
+        dot = tk.Canvas(line, width=10, height=10, bg=theme.CARD, highlightthickness=0)
+        dot.create_oval(1, 1, 9, 9, fill=DONUT_COLORS[i % len(DONUT_COLORS)], outline="")
+        dot.pack(side="left", padx=(0, 8))
+        tk.Label(line, text=name, font=(theme.FONT, 9), fg=theme.TEXT, bg=theme.CARD).pack(side="left")
+        tk.Label(line, text=str(count), font=(theme.FONT, 9, "bold"), fg=theme.MUTED, bg=theme.CARD).pack(side="right")
+
+    # Grow the slices in from nothing
+    ui.animate(canvas, lambda fraction: set_donut_slices(canvas, slices, total, fraction), steps=30)
+    return card
+
+
+# ---------------------------------------------------------------- weekly bar chart card
 
 # Return the points of a bar with rounded top corners and square bottom corners (for create_polygon smooth=True)
 def rounded_top_points(x1, y1, x2, y2, radius):
@@ -271,7 +348,7 @@ def rounded_top_points(x1, y1, x2, y2, radius):
     ]
 
 
-# Move every bar to `fraction` of its final height (0 = flat, 1 = full)
+# Move every bar (and the number above it) to `fraction` of its final height (0 = flat, 1 = full)
 def set_bar_heights(chart, bars, fraction):
     for bar in bars:
         height = bar["height"] * fraction
@@ -279,6 +356,7 @@ def set_bar_heights(chart, bars, fraction):
         # A bar can't have corners rounder than half its own height
         radius = min(BAR_RADIUS, height / 2)
         chart.coords(bar["item"], *rounded_top_points(bar["left"], top, bar["left"] + BAR_WIDTH, bar["base"], radius))
+        chart.coords(bar["value"], bar["left"] + BAR_WIDTH / 2, top - 9)
 
 
 # Grow the bars one small step towards full height, then ask after() for the next step
@@ -294,39 +372,12 @@ def grow_bars(chart, bars, step):
         chart.winfo_toplevel().after(GROW_DELAY, lambda: grow_bars(chart, bars, step + 1))
 
 
-# Show "3 habits" just above a bar while the mouse is over its column
-def show_bar_value(chart, bar):
-    if bar["count"] == 1:
-        text = "1 habit"
-    else:
-        text = str(bar["count"]) + " habits"
-    top = bar["base"] - bar["height"]
-    # Center the label over the bar, but never let it stick out past the left or right edge of the chart
-    font = tkfont.Font(family="Arial", size=9, weight="bold")
-    half_width = font.measure(text) / 2 + 2
-    x = min(max(bar["left"] + BAR_WIDTH / 2, half_width), CHART_WIDTH - half_width)
-    # state="disabled": the label is drawn but ignores the mouse. Otherwise, on a short bar, the label would
-    # appear right under the pointer, count as "leaving" the column, get deleted, and reappear, forever
-    chart.create_text(x, top - 8, text=text, fill=theme.TEXT, font=font, tags="hover_label", state="disabled")
-
-
-# Hide the hover label again when the mouse leaves the column
-def hide_bar_value(chart):
-    chart.delete("hover_label")
-
-
-# Build a card with a bar chart of the last 7 days; return the card (the caller packs it)
+# Build a card with a bar chart of the last 7 days (value above each bar, dashed average line); return the card
 def draw_weekly_chart(parent, user_id):
-    card = tk.Frame(parent, bg=theme.CARD, highlightthickness=1, highlightbackground=theme.BORDER, padx=16, pady=16)
-
     week = get_week_counts(user_id)
     total = sum(count for day, count in week)
 
-    # Header: "This week" on the left, the total and best day on the right
-    header = tk.Frame(card, bg=theme.CARD)
-    header.pack(fill="x", pady=(0, 8))
-    title_label = tk.Label(header, text="This week", bg=theme.CARD, fg=theme.TEXT, font=("Arial", 12, "bold"))
-    title_label.pack(side="left")
+    # The subtitle: the total and the best day of the week
     if total == 0:
         summary = "0 habits done"
     else:
@@ -337,11 +388,10 @@ def draw_weekly_chart(parent, user_id):
         else:
             word = "habits"
         summary = str(total) + " " + word + " done · Best day: " + best_day.strftime("%A")
-    summary_label = tk.Label(header, text=summary, bg=theme.CARD, fg=theme.MUTED, font=("Arial", 10))
-    summary_label.pack(side="right", padx=(20, 0))
+    card = ui.create_card(parent, "This week", summary)
 
     chart = tk.Canvas(card, width=CHART_WIDTH, height=CHART_HEIGHT, bg=theme.CARD, highlightthickness=0)
-    chart.pack()
+    chart.pack(anchor="w")
 
     base = CHART_HEIGHT - CHART_BOTTOM          # the y of the bottom of the bars (the 0% line)
     plot_height = base - CHART_TOP              # how tall a 100% bar is
@@ -359,33 +409,209 @@ def draw_weekly_chart(parent, user_id):
         day, count = week[i]
         is_today = i == 6
         left = i * slot_width + (slot_width - BAR_WIDTH) / 2
-        column_tag = "column" + str(i)
 
-        # An invisible (card-colored) rectangle covering the whole column, so even a short bar is easy to hover
-        chart.create_rectangle(i * slot_width, CHART_TOP, (i + 1) * slot_width, base, fill=theme.CARD, outline="", tags=(column_tag, "slot"))
-
-        # Today's bar and day name are in the accent color, the other days in the heatmap blue
+        # Today's bar and day name are in the accent color, the other days in a heatmap shade
         if is_today:
-            color = theme.ACCENT
-            label_color = theme.ACCENT
+            color, label_color = theme.ACCENT, theme.ACCENT
         else:
-            color = theme.HEATMAP[3]
-            label_color = theme.MUTED
+            color, label_color = theme.HEATMAP[3], theme.MUTED
         # Start flat (the grow animation gives it its height); count / habits of the plot height, at most 100%
-        item = chart.create_polygon(rounded_top_points(left, base, left + BAR_WIDTH, base, 0), smooth=True, fill=color, outline="", tags=column_tag)
-        bar = {"item": item, "left": left, "base": base, "count": count, "height": plot_height * min(1, count / habit_count)}
-        bars.append(bar)
+        item = chart.create_polygon(rounded_top_points(left, base, left + BAR_WIDTH, base, 0), smooth=True, fill=color, outline="")
+        value = chart.create_text(left + BAR_WIDTH / 2, base - 9, text=str(count), fill=theme.TEXT, font=(theme.FONT, 9, "bold"))
+        bars.append({"item": item, "value": value, "left": left, "base": base, "height": plot_height * min(1, count / habit_count)})
 
-        chart.create_text(left + BAR_WIDTH / 2, base + 12, text=day.strftime("%a"), fill=label_color, font=("Arial", 9))
+        chart.create_text(left + BAR_WIDTH / 2, base + 12, text=day.strftime("%a"), fill=label_color, font=(theme.FONT, 9))
 
-        chart.tag_bind(column_tag, "<Enter>", lambda event, bar=bar: show_bar_value(chart, bar))
-        chart.tag_bind(column_tag, "<Leave>", lambda event: hide_bar_value(chart))
-
-    # Push the invisible column rectangles to the very back, so the guide lines show on top of them
-    chart.tag_lower("slot")
+    # The weekly average as a dashed line, at the height a bar of the average size would reach
+    average = total / 7
+    average_y = base - plot_height * min(1, average / habit_count)
+    # dash=(4, 3): draw 4 pixels, skip 3, and repeat
+    chart.create_line(0, average_y, CHART_WIDTH - 26, average_y, fill=theme.MUTED, dash=(4, 3))
+    chart.create_text(CHART_WIDTH, average_y, text="avg", fill=theme.MUTED, font=(theme.FONT, 8), anchor="e")
 
     grow_bars(chart, bars, 1)
     return card
+
+
+# ---------------------------------------------------------------- consistency ring card
+
+# Build the "Consistency" card: a thick ring showing the % of the last 30 days with at least one habit done
+def create_consistency_card(parent, counts):
+    card = ui.create_card(parent, "Consistency", "Days with at least 1 habit done")
+    today = date.today()
+    active = 0
+    for days_ago in range(30):
+        if counts.get((today - timedelta(days=days_ago)).isoformat(), 0) > 0:
+            active = active + 1
+    fraction = active / 30
+    percent = round(fraction * 100)
+
+    middle = RING_SIZE / 2
+    radius = (RING_SIZE - RING_THICKNESS) / 2
+    canvas = tk.Canvas(card, width=RING_SIZE, height=RING_SIZE, bg=theme.CARD, highlightthickness=0)
+    canvas.pack()
+    number = canvas.create_text(middle, middle, text="0%", fill=theme.TEXT, font=(theme.FONT, 24, "bold"))
+    tk.Label(card, text=str(active) + " of 30 days", font=(theme.FONT, 10), fg=theme.MUTED, bg=theme.CARD).pack(pady=(8, 0))
+
+    ui.animate(canvas, lambda progress: grow_ring(canvas, number, middle, radius, fraction, percent, progress), steps=36)
+    return card
+
+
+# One animation step: redraw the ring at `progress` (0 to 1) of its final size and count the % up with it
+def grow_ring(canvas, number, middle, radius, fraction, percent, progress):
+    ui.draw_ring(canvas, middle, middle, radius, RING_THICKNESS, fraction * progress)
+    canvas.itemconfig(number, text=str(round(percent * progress)) + "%")
+
+
+# ---------------------------------------------------------------- habits table card
+
+# Color one table row: a slightly lighter background while hovered, the card color otherwise
+def paint_table_row(row, hovered):
+    background = theme.BORDER if hovered else theme.CARD
+    for widget in row["parts"]:
+        widget.config(bg=background)
+    # The progress bar's track is BORDER, so on a hovered row it uses the darker BG to stay visible
+    row["percent"]["track"] = theme.BG if hovered else theme.BORDER
+    draw_table_bar(row["percent"])
+
+
+# The mouse left a table row (or moved onto something inside it): un-hover only if it really left the row
+def leave_table_row(row):
+    x, y = row["frame"].winfo_pointerxy()
+    if not ui.is_inside(row["frame"].winfo_containing(x, y), row["frame"]):
+        paint_table_row(row, False)
+
+
+# Draw a row's "last 30 days" bar: a thin track across the canvas and an ACCENT fill for the habit's %
+def draw_table_bar(bar_info):
+    bar = bar_info["canvas"]
+    if not bar.winfo_exists():
+        return
+    bar.delete("all")
+    width = bar.winfo_width()
+    bar.create_rectangle(0, 0, width, 6, fill=bar_info["track"], outline="")
+    if bar_info["fraction"] > 0:
+        bar.create_rectangle(0, 0, width * bar_info["fraction"], 6, fill=theme.ACCENT, outline="")
+
+
+# Set up a table row's 4 columns (the same weights in every row, so the columns line up from row to row)
+def setup_table_columns(frame):
+    for column, weight in enumerate([3, 2, 2, 3]):
+        frame.columnconfigure(column, weight=weight, uniform="table")
+
+
+# Return a "🔥 N" pill: accent on the orange tint when N > 0, grey otherwise
+def streak_pill(parent, number):
+    if number > 0:
+        return ui.create_pill(parent, "🔥 " + str(number), theme.ACCENT, theme.ACCENT_SOFT)
+    return ui.create_pill(parent, "🔥 0", theme.MUTED, theme.BORDER)
+
+
+# Build the habits table card: each habit's current streak, best streak and last-30-days completion
+def create_habit_table_card(parent, user_id):
+    card = ui.create_card(parent, "Habits", "Sorted by how often you did them in the last 30 days")
+
+    rows_data = []
+    for habit_id, name in database.get_all_habits(user_id):
+        rows_data.append({
+            "name": name,
+            "current": database.get_streak(habit_id),
+            "best": database.get_best_streak(habit_id),
+            "percent": database.get_completion_percent(habit_id),
+        })
+    if len(rows_data) == 0:
+        tk.Label(card, text="No habits yet. Add some on the Today tab.", font=(theme.FONT, 10), fg=theme.MUTED, bg=theme.CARD).pack(anchor="w")
+        return card
+    # Highest "last 30 days" first
+    rows_data.sort(key=lambda info: info["percent"], reverse=True)
+
+    header = tk.Frame(card, bg=theme.CARD)
+    header.pack(fill="x", pady=(0, 6))
+    setup_table_columns(header)
+    for column, text in enumerate(["Habit", "Current streak", "Best streak", "Last 30 days"]):
+        tk.Label(header, text=text, font=(theme.FONT, 9, "bold"), fg=theme.MUTED, bg=theme.CARD).grid(row=0, column=column, sticky="w", padx=8)
+
+    for i in range(len(rows_data)):
+        info = rows_data[i]
+        # A 1px line between rows (and under the header)
+        tk.Frame(card, bg=theme.BORDER, height=1).pack(fill="x")
+
+        frame = tk.Frame(card, bg=theme.CARD, pady=8)
+        frame.pack(fill="x")
+        setup_table_columns(frame)
+
+        # The top habit gets a crown (only if it was actually done at least once)
+        name_text = info["name"]
+        if i == 0 and info["percent"] > 0:
+            name_text = "👑 " + name_text
+        name = tk.Label(frame, text=name_text, font=(theme.FONT, 10), fg=theme.TEXT, bg=theme.CARD)
+        name.grid(row=0, column=0, sticky="w", padx=8)
+        current = streak_pill(frame, info["current"])
+        current.grid(row=0, column=1, sticky="w", padx=8)
+        best = streak_pill(frame, info["best"])
+        best.grid(row=0, column=2, sticky="w", padx=8)
+
+        # Last 30 days: a thin bar that stretches across the column, with the % next to it
+        cell = tk.Frame(frame, bg=theme.CARD)
+        cell.grid(row=0, column=3, sticky="ew", padx=8)
+        percent_label = tk.Label(cell, text=str(info["percent"]) + "%", font=(theme.FONT, 9, "bold"), fg=theme.TEXT, bg=theme.CARD, width=4, anchor="e")
+        percent_label.pack(side="right")
+        bar = tk.Canvas(cell, height=6, bg=theme.CARD, highlightthickness=0)
+        bar.pack(side="left", fill="x", expand=True, padx=(0, 6))
+        bar_info = {"canvas": bar, "fraction": info["percent"] / 100, "track": theme.BORDER}
+        bar.bind("<Configure>", lambda event, bar_info=bar_info: draw_table_bar(bar_info))
+
+        row = {"frame": frame, "parts": [frame, name, current, best, cell, percent_label, bar], "percent": bar_info}
+        frame.bind("<Enter>", lambda event, row=row: paint_table_row(row, True))
+        frame.bind("<Leave>", lambda event, row=row: leave_table_row(row))
+    return card
+
+
+# ---------------------------------------------------------------- the whole page
+
+# Build the Progress page inside parent: summary tiles, heatmap + donut, weekly chart + ring, habits table
+def build_progress_page(parent, user_id):
+    page = ui.create_scroll_page(parent)
+    counts = get_counts_from_database(user_id)
+
+    # Row 1: four equal summary tiles
+    row1 = ui.add_page_row(page)
+    for column in range(4):
+        row1.columnconfigure(column, weight=1, uniform="summary")
+    today = date.today()
+    last_30 = 0
+    for days_ago in range(30):
+        last_30 = last_30 + counts.get((today - timedelta(days=days_ago)).isoformat(), 0)
+    # Active days counts the last 90 days; the average uses the last 30
+    tiles = [
+        ("✅", "Total check-ins", str(get_total_checkins(user_id))),
+        ("📅", "Active days", str(sum(1 for count in counts.values() if count > 0))),
+        # :.1f means "with 1 decimal place", e.g. 1.4
+        ("📊", "Avg per day", f"{last_30 / 30:.1f}"),
+        ("🔥", "Longest streak", str(get_longest_streak(user_id))),
+    ]
+    for column in range(4):
+        icon, label, value = tiles[column]
+        tile, number = ui.create_stat_tile(row1, icon, label)
+        number.config(text=value)
+        # 4px on each side keeps all four tiles exactly the same width
+        tile.grid(row=0, column=column, sticky="nsew", padx=4)
+
+    # Rows 2 and 3: two cards side by side, sharing the width 3 : 2 (about 60% / 40%) with a 16px gap
+    row2 = ui.add_page_row(page)
+    row3 = ui.add_page_row(page)
+    for row in (row2, row3):
+        row.columnconfigure(0, weight=3, uniform="split")
+        row.columnconfigure(1, weight=2, uniform="split")
+    create_heatmap_card(row2, user_id, counts).grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+    create_donut_card(row2, user_id).grid(row=0, column=1, sticky="nsew", padx=(8, 0))
+    draw_weekly_chart(row3, user_id).grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+    create_consistency_card(row3, counts).grid(row=0, column=1, sticky="nsew", padx=(8, 0))
+
+    # Row 4: the habits table across the full width
+    row4 = ui.add_page_row(page)
+    create_habit_table_card(row4, user_id).pack(fill="x")
+    return page
 
 
 if __name__ == "__main__":
@@ -396,15 +622,10 @@ if __name__ == "__main__":
     user_id = database.check_login("demo", "demo123")
 
     window = tk.Tk()
-    window.title("Consistify - Heatmap")
-    window.configure(bg=theme.BG, padx=20, pady=20)
+    window.title("Consistify - Progress")
+    # The same size as the dashboard's content area in main.py
+    window.geometry("900x700")
+    window.configure(bg=theme.BG)
 
-    canvas, info_label = create_heatmap_section(window, user_id)
-    draw_weekly_chart(window, user_id).pack(pady=(10, 0))
-    create_stats_section(window, user_id)
-
-    # A test button that redraws the heatmap, like main.py will do after a checkbox is ticked
-    refresh_button = tk.Button(window, text="Refresh", command=lambda: refresh_heatmap(canvas, info_label, user_id))
-    refresh_button.pack(pady=(10, 0))
-
+    build_progress_page(window, user_id)
     window.mainloop()

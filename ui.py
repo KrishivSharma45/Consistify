@@ -7,6 +7,8 @@ import tkinter.font as tkfont
 # Import math (cos and sin) and random, to send each confetti piece off in its own direction
 import math
 import random
+# Import sys to check whether we are running on a Mac (the mouse wheel works differently there)
+import sys
 
 # Import the app's shared colors and font
 import theme
@@ -16,6 +18,131 @@ CONFETTI_GRAVITY = 0.35   # how much faster every piece falls each frame (pixels
 CONFETTI_DRAG = 0.99      # each frame the sideways speed keeps 99% of itself, like air slowing it down
 CONFETTI_FRAME = 16       # milliseconds between frames (about 60 frames a second)
 CONFETTI_TIME = 2500      # milliseconds before the celebration closes by itself
+
+CARD_PADDING = 20         # space inside every card
+PAGE_MARGIN = 40          # space between a scroll page's cards and the left/right edges
+PAGE_GAP = 16             # space between two rows of cards on a scroll page
+PAGE_WHEEL_PIXELS = 40    # how far one mouse-wheel notch scrolls a scroll page
+
+
+# Create a card (CARD background, 1px BORDER outline, 20px padding) with an optional bold title and muted
+# subtitle; return it (the caller packs or grids it). bg/border/thickness change the look (e.g. for badges)
+def create_card(parent, title=None, subtitle=None, bg=theme.CARD, border=theme.BORDER, thickness=1):
+    card = tk.Frame(parent, bg=bg, highlightthickness=thickness, highlightbackground=border, padx=CARD_PADDING, pady=CARD_PADDING)
+    if title is not None:
+        title_label = tk.Label(card, text=title, font=(theme.FONT, 12, "bold"), fg=theme.TEXT, bg=bg)
+        title_label.pack(anchor="w")
+    if subtitle is not None:
+        subtitle_label = tk.Label(card, text=subtitle, font=(theme.FONT, 9), fg=theme.MUTED, bg=bg)
+        subtitle_label.pack(anchor="w")
+    if title is not None or subtitle is not None:
+        # A little space between the heading and whatever the card shows
+        tk.Frame(card, bg=bg, height=12).pack()
+    return card
+
+
+# Run on_step(fraction) with fraction going smoothly from 0 to 1 over `steps` frames, then stop.
+# It stops early, safely, if `widget` is destroyed (e.g. the page was closed) while it runs
+def animate(widget, on_step, steps=24, delay=16, step=1):
+    if not widget.winfo_exists():
+        return
+    # "Ease out": quick at first, gentle at the end
+    on_step(1 - (1 - step / steps) ** 3)
+    if step < steps:
+        widget.winfo_toplevel().after(delay, lambda: animate(widget, on_step, steps, delay, step + 1))
+
+
+# Draw a thick progress ring on a canvas: a full grey track, and an arc for `fraction` of it, starting at the top
+def draw_ring(canvas, middle_x, middle_y, radius, thickness, fraction, color=theme.ACCENT, track=theme.BORDER, tag="ring"):
+    canvas.delete(tag)
+    box = (middle_x - radius, middle_y - radius, middle_x + radius, middle_y + radius)
+    # The track: a circle drawn only as a thick outline
+    canvas.create_oval(*box, outline=track, width=thickness, tags=tag)
+    if fraction > 0:
+        # style="arc" draws just the curved line; start=90 is 12 o'clock and a negative extent goes clockwise.
+        # 359.9 instead of 360, because Tk draws nothing for an arc of exactly 360 degrees
+        canvas.create_arc(*box, start=90, extent=-359.9 * min(1, fraction), style="arc", outline=color, width=thickness, tags=tag)
+
+
+# Draw a rounded pill with text in it (e.g. "🔥 4") on its own small canvas and return the canvas
+def create_pill(parent, text, text_color, fill, font_size=9):
+    font = tkfont.Font(family=theme.FONT, size=font_size, weight="bold")
+    width = font.measure(text) + 18
+    height = font.metrics("linespace") + 6
+    pill = tk.Canvas(parent, width=width, height=height, bg=parent.cget("bg"), highlightthickness=0)
+    # radius = half the height makes both ends fully round
+    pill.create_polygon(rounded_rectangle_points(0, 0, width, height, height / 2), smooth=True, fill=fill, outline="")
+    pill.create_text(width / 2, height / 2, text=text, fill=text_color, font=font)
+    return pill
+
+
+# Create a small stat card: an icon tile, then a big number and a label beside it; return (card, number label)
+def create_stat_tile(parent, icon, label_text):
+    card = create_card(parent)
+    # Top row: the icon and the big number side by side
+    top = tk.Frame(card, bg=theme.CARD)
+    top.pack(anchor="w")
+    icon_tile(top, icon, size=36).pack(side="left", padx=(0, 10))
+    number = tk.Label(top, text="0", font=(theme.FONT, 18, "bold"), fg=theme.TEXT, bg=theme.CARD)
+    number.pack(side="left")
+    # The label goes underneath, so it can use the card's full width and never gets cut off
+    label = tk.Label(card, text=label_text, font=(theme.FONT, 9), fg=theme.MUTED, bg=theme.CARD)
+    label.pack(anchor="w", pady=(8, 0))
+    return card, number
+
+
+# Put the page's rows one under another (with gaps) on its canvas, draw the grid behind them and update the scroll size
+def layout_scroll_page(page):
+    canvas = page["canvas"]
+    if not canvas.winfo_exists():
+        return
+    width = canvas.winfo_width()
+    y = PAGE_GAP + 8
+    for frame, item in page["rows"]:
+        canvas.coords(item, PAGE_MARGIN, y)
+        canvas.itemconfigure(item, width=max(1, width - 2 * PAGE_MARGIN))
+        y = y + frame.winfo_reqheight() + PAGE_GAP
+    # The grid is drawn on this canvas (so it scrolls with the page) and shows in the gaps between rows
+    canvas.delete("grid")
+    draw_grid_lines(canvas, width, max(y, canvas.winfo_height()))
+    canvas.tag_lower("grid")
+    canvas.configure(scrollregion=(0, 0, width, y))
+
+
+# Scroll a scroll page with the mouse wheel (Windows sends steps of 120 per notch, a Mac small numbers)
+def scroll_page_wheel(canvas, event):
+    if not canvas.winfo_exists():
+        return
+    top, bottom = canvas.yview()
+    # Nothing to scroll if the whole page already fits
+    if top <= 0 and bottom >= 1:
+        return
+    if sys.platform == "darwin":
+        notches = -event.delta / 10
+    else:
+        notches = -event.delta / 120
+    canvas.yview_scroll(int(notches * PAGE_WHEEL_PIXELS), "units")
+
+
+# Create a page that scrolls: a canvas where each row of cards is its own window, so the grid shows between rows
+def create_scroll_page(parent):
+    canvas = tk.Canvas(parent, bg=theme.BG, highlightthickness=0, yscrollincrement=1)
+    canvas.pack(fill="both", expand=True)
+    page = {"canvas": canvas, "rows": []}
+    canvas.bind("<Configure>", lambda event: layout_scroll_page(page))
+    canvas.bind_all("<MouseWheel>", lambda event: scroll_page_wheel(canvas, event))
+    return page
+
+
+# Add a new (empty) row to a scroll page and return its frame; put the row's cards inside it
+def add_page_row(page):
+    canvas = page["canvas"]
+    row = tk.Frame(canvas, bg=theme.BG)
+    item = canvas.create_window(0, 0, window=row, anchor="nw")
+    page["rows"].append((row, item))
+    # Whenever a row changes size (cards appear, text wraps), lay the whole page out again
+    row.bind("<Configure>", lambda event: layout_scroll_page(page))
+    return row
 
 
 # Return the corner points of a rounded rectangle; with smooth=True, tkinter bends the outline through them
@@ -93,7 +220,8 @@ def icon_tile(parent, emoji, size=36, radius=8):
     canvas = tk.Canvas(parent, width=size, height=size, bg=parent.cget("bg"), highlightthickness=0)
     points = rounded_rectangle_points(1, 1, size - 2, size - 2, radius)
     canvas.create_polygon(points, smooth=True, fill=theme.BG, outline=theme.BORDER)
-    canvas.create_text(size / 2, size / 2, text=emoji, font=(theme.FONT, int(size / 3)))
+    # fill gives the emoji its color (without it, Tk draws it black, which is invisible on a dark tile)
+    canvas.create_text(size / 2, size / 2, text=emoji, fill=theme.ACCENT, font=(theme.FONT, int(size / 3)))
     return canvas
 
 
