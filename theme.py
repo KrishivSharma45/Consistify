@@ -1,37 +1,40 @@
-# theme.py - all colors and fonts for Consistify (Dark Navy theme)
+# theme.py - all colors and fonts for Consistify (Pure Black & Orange theme)
 
-# page background (dark navy)
-BG = "#0a1128"
+# page background (near pure black)
+BG = "#0A0A0A"
 
 # cards, sidebar, navbar
-CARD = "#111a35"
+CARD = "#171717"
 
 # borders
-BORDER = "#1f2b4d"
+BORDER = "#262626"
 
-# main text (light grey)
-TEXT = "#d1d5db"
+# main text (off-white)
+TEXT = "#FAFAFA"
 
-# secondary text (mid grey)
-MUTED = "#8b93a7"
+# secondary text (grey)
+MUTED = "#A3A3A3"
 
-# buttons, highlights, logo
-ACCENT = "#5b8def"
+# buttons, highlights, logo (orange)
+ACCENT = "#FE7F2D"
 
-# accent color when hovering
-ACCENT_HOVER = "#7aa5ff"
+# accent color when hovering (lighter orange)
+ACCENT_HOVER = "#FF9A52"
 
-# error messages
-ERROR = "#f87171"
+# error messages (deeper red so it doesn't look like the orange)
+ERROR = "#E5484D"
 
 # success messages
-SUCCESS = "#4ade80"
+SUCCESS = "#4ADE80"
 
-# heatmap shades: 0, 1, 2, 3, 4+ habits done
-HEATMAP = ["#111a35", "#1e3a6e", "#2f5aa8", "#4577d4", "#5b8def"]
+# heatmap shades: 0, 1, 2, 3, 4+ habits done (black to orange)
+HEATMAP = ["#171717", "#51311D", "#8B4B22", "#C46528", "#FE7F2D"]
 
-# grid lines (subtle navy)
-GRID = "#131d3b"
+# grid lines (very subtle)
+GRID = "#141414"
+
+# space between grid lines in pixels
+GRID_SIZE = 32
 
 # main font
 FONT = "Segoe UI"
