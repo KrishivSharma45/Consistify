@@ -4,8 +4,8 @@ import tkinter as tk
 from tkinter import messagebox
 # Import filedialog, tkinter's ready-made "Open" and "Save As" windows
 from tkinter import filedialog
-# Import date so we can get today's date
-from datetime import date
+# Import date, datetime and timedelta for today's date, the current hour and the last 7 days
+from datetime import date, datetime, timedelta
 
 # Import our own database.py so we can save and load habits
 import database
@@ -23,36 +23,111 @@ FILL_DELAY = 20        # ...20 milliseconds apart, so about 300 ms in total
 def create_window():
     window = tk.Tk()
     window.title("Consistify")
-    window.geometry("900x600")
+    # The same size as the dashboard's content area in main.py
+    window.geometry("900x700")
     window.configure(bg=theme.BG)
     return window
 
 
-# Create the big title and the small subtitle at the top of the window
-def create_header(window):
-    title_label = tk.Label(
-        window,
-        text="Consistify",
-        font=(theme.FONT, 28, "bold"),
-        fg=theme.ACCENT,
-        bg=theme.BG,
-    )
-    title_label.pack(pady=(30, 0))
-
-    subtitle_label = tk.Label(
-        window,
-        text="Build habits that stick",
-        font=(theme.FONT, 12),
-        fg=theme.TEXT,
-        bg=theme.BG,
-    )
-    subtitle_label.pack(pady=(5, 20))
+# Return "Good morning ☀️", "Good afternoon ☀️" or "Good evening 🌙" (without the name), from the current hour
+def get_greeting():
+    # datetime.now().hour is a number from 0 (midnight) to 23 (11 pm)
+    hour = datetime.now().hour
+    if 5 <= hour < 12:
+        return "Good morning", "☀️"
+    elif 12 <= hour < 17:
+        return "Good afternoon", "☀️"
+    else:
+        return "Good evening", "🌙"
 
 
-# Create one row holding the text box, the "Add Habit" button and the "Export CSV" button side by side
+# Create the header row: greeting and today's date on the left, the "Export CSV" button on the right
+def create_page_header(window, user_id, username):
+    header = tk.Frame(window, bg=theme.BG)
+    header.pack(fill="x", padx=40, pady=(20, 10))
+
+    left = tk.Frame(header, bg=theme.BG)
+    left.pack(side="left")
+    greeting, emoji = get_greeting()
+    greeting_label = tk.Label(left, text=greeting + ", " + username + " " + emoji, font=(theme.FONT, 20, "bold"), fg=theme.TEXT, bg=theme.BG)
+    greeting_label.pack(anchor="w")
+    # e.g. "Saturday, 7 November" (%A is the weekday name, %B the month name)
+    today = date.today()
+    date_text = today.strftime("%A") + ", " + str(today.day) + " " + today.strftime("%B")
+    date_label = tk.Label(left, text=date_text, font=(theme.FONT, 11), fg=theme.MUTED, bg=theme.BG)
+    date_label.pack(anchor="w")
+
+    export_button = ui.rounded_button(header, "Export CSV", lambda: on_export_click(user_id), "ghost", font_size=10)
+    export_button.pack(side="right")
+
+
+# Return the highest best-ever streak among one user's habits (0 if there are no habits)
+def get_overall_best_streak(user_id):
+    best = 0
+    for habit_id, name in database.get_all_habits(user_id):
+        best = max(best, database.get_best_streak(habit_id))
+    return best
+
+
+# Return this week's completion: habits done over the last 7 days out of (number of habits x 7), as a whole percent
+def get_week_percent(user_id):
+    habit_count = len(database.get_all_habits(user_id))
+    if habit_count == 0:
+        return 0
+
+    done = 0
+    for days_ago in range(7):
+        day = date.today() - timedelta(days=days_ago)
+        done = done + database.get_count_for_date(day.isoformat(), user_id)
+    return round(done * 100 / (habit_count * 7))
+
+
+# Create one stat card: an icon tile on the left, a big number and a small label on the right; return the number label
+def create_stat_card(row, column, icon, label_text):
+    card = tk.Frame(row, bg=theme.CARD, highlightthickness=1, highlightbackground=theme.BORDER, padx=16, pady=16)
+    # 3px on each side of every card makes a 6px gap between cards and keeps all four exactly the same width
+    card.grid(row=0, column=column, sticky="nsew", padx=3)
+
+    ui.icon_tile(card, icon, size=36).pack(side="left", padx=(0, 12))
+    text = tk.Frame(card, bg=theme.CARD)
+    text.pack(side="left")
+    number = tk.Label(text, text="0", font=(theme.FONT, 18, "bold"), fg=theme.TEXT, bg=theme.CARD)
+    number.pack(anchor="w")
+    label = tk.Label(text, text=label_text, font=(theme.FONT, 9), fg=theme.MUTED, bg=theme.CARD)
+    label.pack(anchor="w")
+    return number
+
+
+# Create the row of 4 equal stat cards and return a dictionary of their number labels
+def create_stats_row(window):
+    row = tk.Frame(window, bg=theme.BG)
+    # 37px + each card's own 3px = 40px, so the outer edges line up with the cards below
+    row.pack(fill="x", padx=37, pady=(0, 10))
+    # Four columns that always stay the same width
+    for column in range(4):
+        row.columnconfigure(column, weight=1, uniform="stats")
+
+    return {
+        "done": create_stat_card(row, 0, "✅", "Done today"),
+        "best": create_stat_card(row, 1, "🔥", "Best streak"),
+        "week": create_stat_card(row, 2, "📈", "This week"),
+        "badges": create_stat_card(row, 3, "🏆", "Badges"),
+    }
+
+
+# Recalculate all four stat numbers from the database and show them
+def update_stats_row(stats, user_id):
+    done, total = get_today_progress(user_id)
+    stats["done"].config(text=str(done) + "/" + str(total))
+    stats["best"].config(text=str(get_overall_best_streak(user_id)))
+    stats["week"].config(text=str(get_week_percent(user_id)) + "%")
+    stats["badges"].config(text=str(len(database.get_badges(user_id))) + "/" + str(len(database.MILESTONES)))
+
+
+# Create one row holding the text box and the "Add Habit" button side by side
 def create_input_row(window, user_id):
     input_frame = tk.Frame(window, bg=theme.BG)
-    input_frame.pack(pady=10)
+    input_frame.pack(pady=4)
 
     habit_entry = tk.Entry(
         input_frame,
@@ -78,21 +153,6 @@ def create_input_row(window, user_id):
     )
     add_button.pack(side="left")
 
-    export_button = tk.Button(
-        input_frame,
-        text="Export CSV",
-        font=(theme.FONT, 11, "bold"),
-        bg=theme.CARD,
-        fg=theme.ACCENT,
-        activebackground=theme.BORDER,
-        activeforeground=theme.ACCENT,
-        relief="flat",
-        padx=15,
-        pady=5,
-        command=lambda: on_export_click(user_id),
-    )
-    export_button.pack(side="left", padx=(10, 0))
-
     return habit_entry, add_button
 
 
@@ -110,8 +170,8 @@ def get_today_progress(user_id):
 
 # Create the "Today's progress" card (text, bar, message) and return a dictionary of its parts
 def create_progress_card(window):
-    card = tk.Frame(window, bg=theme.CARD, highlightthickness=1, highlightbackground=theme.BORDER, padx=16, pady=16)
-    card.pack(fill="x", padx=40, pady=(0, 10))
+    card = tk.Frame(window, bg=theme.CARD, highlightthickness=1, highlightbackground=theme.BORDER, padx=16, pady=12)
+    card.pack(fill="x", padx=40, pady=(0, 8))
 
     # Row 1: title on the left, "3 / 5 done" on the right
     top_row = tk.Frame(card, bg=theme.CARD)
@@ -207,15 +267,15 @@ def update_progress_card(progress, user_id):
     animate_fill(progress, progress["shown"], percent / 100, 1, progress["animation"])
 
 
-# Create an empty bordered area that will hold the habit list later
+# Create an empty bordered card that will hold the habit list later (a solid CARD, so it sits on top of the grid)
 def create_habit_list_area(window):
     habit_list_frame = tk.Frame(
         window,
-        bg=theme.BG,
+        bg=theme.CARD,
         highlightbackground=theme.BORDER,
         highlightthickness=1,
     )
-    habit_list_frame.pack(fill="both", expand=True, padx=40, pady=20)
+    habit_list_frame.pack(fill="both", expand=True, padx=40, pady=(8, 16))
     return habit_list_frame
 
 
@@ -227,17 +287,19 @@ def refresh_habit_list(habit_list_frame, user_id, on_change=None):
     today = date.today().isoformat()
 
     for habit_id, name in database.get_all_habits(user_id):
-        row_frame = tk.Frame(habit_list_frame, bg=theme.BG)
+        # Every row and everything in it uses CARD, the same color as the list card behind it
+        row_frame = tk.Frame(habit_list_frame, bg=theme.CARD)
         row_frame.pack(fill="x", padx=15, pady=5)
 
         done_var = tk.BooleanVar(value=database.is_done(habit_id, today))
         done_checkbox = tk.Checkbutton(
             row_frame,
             variable=done_var,
-            bg=theme.BG,
+            bg=theme.CARD,
             fg=theme.TEXT,
-            selectcolor=theme.CARD,
-            activebackground=theme.BG,
+            # selectcolor is the inside of the tick box: BG (darker) so the box stands out on the card
+            selectcolor=theme.BG,
+            activebackground=theme.CARD,
             activeforeground=theme.TEXT,
             highlightthickness=0,
             command=lambda habit_id=habit_id, done_var=done_var: on_check_click(
@@ -251,7 +313,7 @@ def refresh_habit_list(habit_list_frame, user_id, on_change=None):
             text=name,
             font=(theme.FONT, 12),
             fg=theme.TEXT,
-            bg=theme.BG,
+            bg=theme.CARD,
         )
         name_label.pack(side="left")
 
@@ -260,17 +322,18 @@ def refresh_habit_list(habit_list_frame, user_id, on_change=None):
             text="🔥 " + str(database.get_streak(habit_id)) + " day streak",
             font=(theme.FONT, 10),
             fg=theme.ACCENT,
-            bg=theme.BG,
+            bg=theme.CARD,
         )
         streak_label.pack(side="left", padx=(15, 0))
 
+        # BORDER (a bit lighter than the card) so the button is still visible on the card
         delete_button = tk.Button(
             row_frame,
             text="Delete",
             font=(theme.FONT, 9),
-            bg=theme.CARD,
+            bg=theme.BORDER,
             fg=theme.TEXT,
-            activebackground=theme.BORDER,
+            activebackground=theme.BG,
             activeforeground=theme.TEXT,
             relief="flat",
             padx=8,
@@ -278,9 +341,11 @@ def refresh_habit_list(habit_list_frame, user_id, on_change=None):
         )
         delete_button.pack(side="right")
 
-    # Every add, delete, tick and untick ends up here, so this keeps the progress card up to date too
+    # Every add, delete, tick and untick ends up here, so this keeps the progress card and stat cards up to date too
     if hasattr(habit_list_frame, "progress"):
         update_progress_card(habit_list_frame.progress, user_id)
+    if hasattr(habit_list_frame, "stats"):
+        update_stats_row(habit_list_frame.stats, user_id)
 
 
 # Add the habit typed in the Entry box, warn if it already exists, then redraw the list
@@ -302,8 +367,12 @@ def on_add_click(habit_entry, habit_list_frame, user_id, on_change=None):
 def on_check_click(habit_id, done_var, habit_list_frame, user_id, on_change=None):
     today = date.today().isoformat()
 
+    # Only a tick (not an untick) can unlock a badge or finish the day
+    new_badges = []
     if done_var.get():
         database.mark_done(habit_id, today)
+        # Save any new badges BEFORE redrawing, so the Badges stat card already counts them
+        new_badges = database.check_new_badges(user_id)
     else:
         database.unmark_done(habit_id, today)
 
@@ -311,13 +380,11 @@ def on_check_click(habit_id, done_var, habit_list_frame, user_id, on_change=None
     if on_change is not None:
         on_change()
 
-    # Only a tick (not an untick) can unlock a badge or finish the day
     if not done_var.get():
         return
 
     # habit_list_frame.master is the frame the habit section was built in (the dashboard's content area)
     content = habit_list_frame.master
-    new_badges = database.check_new_badges(user_id)
     if len(new_badges) > 0:
         # A new badge beats "all done": only one kind of celebration at a time
         show_badge_celebrations(content, new_badges)
@@ -363,15 +430,18 @@ def on_delete_click(habit_id, habit_list_frame, user_id, on_change=None):
         on_change()
 
 
-# Build the whole habit section (header, progress card, input row, habit list) for one user inside any window or frame
-def create_habit_section(parent, user_id, on_change=None):
-    create_header(parent)
+# Build the whole habit section (header, stat cards, progress card, input row, habit list) for one user
+# inside any window or frame; username is used in the greeting
+def create_habit_section(parent, user_id, on_change=None, username="there"):
+    create_page_header(parent, user_id, username)
+    stats = create_stats_row(parent)
     progress = create_progress_card(parent)
     habit_entry, add_button = create_input_row(parent, user_id)
     habit_list_frame = create_habit_list_area(parent)
-    # Attach the progress card to the list frame: every function that redraws the list already
-    # receives habit_list_frame, so it can reach the card through it without an extra parameter
+    # Attach the progress card and stat cards to the list frame: every function that redraws the list
+    # already receives habit_list_frame, so it can reach them through it without an extra parameter
     habit_list_frame.progress = progress
+    habit_list_frame.stats = stats
 
     add_button.config(command=lambda: on_add_click(habit_entry, habit_list_frame, user_id, on_change))
     habit_entry.bind("<Return>", lambda event: on_add_click(habit_entry, habit_list_frame, user_id, on_change))
@@ -388,5 +458,5 @@ if __name__ == "__main__":
     user_id = database.check_login("demo", "demo123")
 
     window = create_window()
-    create_habit_section(window, user_id)
+    create_habit_section(window, user_id, username="demo")
     window.mainloop()

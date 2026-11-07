@@ -67,33 +67,97 @@ def on_account_deleted():
     on_logout()
 
 
-# Create one full-width sidebar button
-def create_sidebar_button(sidebar, text, command):
-    button = tk.Button(
-        sidebar,
-        text=text,
-        font=(theme.FONT, 11),
-        bg=theme.CARD,
-        fg=theme.TEXT,
-        activebackground=theme.BORDER,
-        activeforeground=theme.TEXT,
-        relief="flat",
-        anchor="w",
-        padx=20,
-        pady=8,
-        cursor="hand2",
-        command=command,
-    )
-    return button
+# Color one sidebar item: active (accent bar + lighter background + accent text), hovered, or normal
+def paint_nav_item(item, hovered=False):
+    if item["active"]:
+        background, text_color, bar_color = theme.BORDER, theme.ACCENT, theme.ACCENT
+    elif hovered:
+        background, text_color, bar_color = theme.BORDER, theme.TEXT, theme.BORDER
+    else:
+        background, text_color, bar_color = theme.CARD, theme.TEXT, theme.CARD
+    item["frame"].config(bg=background)
+    item["label"].config(bg=background, fg=text_color)
+    # The bar takes its own color: accent when active, otherwise the same as the background (so it's invisible)
+    item["bar"].config(bg=bar_color)
 
 
-# Highlight the chosen sidebar button, then fill the content area with that tab
-def show_tab(tab_name, content, buttons):
-    for name, button in buttons.items():
-        if name == tab_name:
-            button.config(bg=theme.BORDER, fg=theme.ACCENT)
-        else:
-            button.config(bg=theme.CARD, fg=theme.TEXT)
+# The mouse left an item (or moved onto its text): go back to normal only if it really left the whole item
+def leave_nav_item(item):
+    x, y = item["frame"].winfo_pointerxy()
+    if not ui.is_inside(item["frame"].winfo_containing(x, y), item["frame"]):
+        paint_nav_item(item)
+
+
+# Create one sidebar item: a 3px bar on the left edge and the text; return a dictionary of its parts
+def create_nav_item(sidebar, text, command):
+    frame = tk.Frame(sidebar, bg=theme.CARD, cursor="hand2")
+    bar = tk.Frame(frame, bg=theme.CARD, width=3)
+    bar.pack(side="left", fill="y")
+    label = tk.Label(frame, text=text, font=(theme.FONT, 11), fg=theme.TEXT, bg=theme.CARD, anchor="w", padx=17, pady=8, cursor="hand2")
+    label.pack(side="left", fill="x", expand=True)
+
+    item = {"frame": frame, "bar": bar, "label": label, "active": False}
+    # Clicking the item or its text does the same thing
+    for part in (frame, label):
+        part.bind("<Button-1>", lambda event: command())
+    frame.bind("<Enter>", lambda event: paint_nav_item(item, hovered=True))
+    frame.bind("<Leave>", lambda event: leave_nav_item(item))
+    return item
+
+
+# A small, spaced-out uppercase heading in the sidebar, like "M E N U"
+def create_section_label(sidebar, text):
+    # tkinter has no letter-spacing option, so a space between every letter fakes it
+    return tk.Label(sidebar, text=" ".join(text), font=(theme.FONT, 8, "bold"), fg=theme.MUTED, bg=theme.CARD)
+
+
+# Draw the logo: a tiny 2x2 grid of heatmap-colored squares, then "Consistify"
+def create_logo(sidebar):
+    row = tk.Frame(sidebar, bg=theme.CARD)
+    icon = tk.Canvas(row, width=20, height=20, bg=theme.CARD, highlightthickness=0)
+    shades = [theme.HEATMAP[2], theme.HEATMAP[4], theme.HEATMAP[1], theme.HEATMAP[3]]
+    for i in range(4):
+        # i % 2 is the column (0, 1, 0, 1) and i // 2 the row (0, 0, 1, 1)
+        left = (i % 2) * 11
+        top = (i // 2) * 11
+        icon.create_rectangle(left, top, left + 9, top + 9, fill=shades[i], outline="")
+    icon.pack(side="left", padx=(0, 10))
+    name = tk.Label(row, text="Consistify", font=(theme.FONT, 14, "bold"), fg=theme.ACCENT, bg=theme.CARD)
+    name.pack(side="left")
+    return row
+
+
+# Build the user card at the bottom of the sidebar: round avatar, username and best streak; return the streak label
+def create_user_card(sidebar, username):
+    card = tk.Frame(sidebar, bg=theme.BG, highlightthickness=1, highlightbackground=theme.BORDER, padx=10, pady=10)
+
+    # Row 1: the avatar (an accent-colored circle with the username's first letter) and the username
+    top = tk.Frame(card, bg=theme.BG)
+    top.pack(fill="x")
+    avatar = tk.Canvas(top, width=32, height=32, bg=theme.BG, highlightthickness=0)
+    avatar.create_oval(1, 1, 31, 31, fill=theme.ACCENT, outline="")
+    avatar.create_text(16, 16, text=username[:1].upper(), fill=theme.BG, font=(theme.FONT, 12, "bold"))
+    avatar.pack(side="left", padx=(0, 10))
+    name = tk.Label(top, text=username, font=(theme.FONT, 10, "bold"), fg=theme.TEXT, bg=theme.BG)
+    name.pack(side="left")
+
+    # Row 2: the best streak, on its own line so it has the card's full width
+    streak = tk.Label(card, font=(theme.FONT, 9), fg=theme.MUTED, bg=theme.BG)
+    streak.pack(anchor="w", pady=(6, 0))
+    return card, streak
+
+
+# Update "🔥 Best streak: N" on the user card (called when the dashboard opens and after every tick/add/delete)
+def refresh_user_card(streak_label):
+    if streak_label.winfo_exists():
+        streak_label.config(text="🔥 Best streak: " + str(gui.get_overall_best_streak(app["user_id"])))
+
+
+# Mark the chosen sidebar item as active, then fill the content area with that tab
+def show_tab(tab_name, content, items, streak_label):
+    for name, item in items.items():
+        item["active"] = name == tab_name
+        paint_nav_item(item)
 
     for child in content.winfo_children():
         child.destroy()
@@ -101,7 +165,8 @@ def show_tab(tab_name, content, buttons):
     ui.draw_grid_background(content)
 
     if tab_name == "today":
-        gui.create_habit_section(content, app["user_id"])
+        # on_change runs after every tick, add and delete, so the best streak on the user card stays up to date
+        gui.create_habit_section(content, app["user_id"], on_change=lambda: refresh_user_card(streak_label), username=app["username"])
     elif tab_name == "badges":
         badges.build_badges_page(content, app["user_id"])
     elif tab_name == "settings":
@@ -130,27 +195,33 @@ def build_dashboard(parent):
     content = tk.Frame(parent, bg=theme.BG)
     content.pack(side="right", fill="both", expand=True)
 
-    title_label = tk.Label(sidebar, text="Consistify", font=(theme.FONT, 18, "bold"), fg=theme.ACCENT, bg=theme.CARD)
-    title_label.pack(anchor="w", padx=20, pady=(25, 0))
+    create_logo(sidebar).pack(anchor="w", padx=20, pady=(24, 22))
 
-    hello_label = tk.Label(sidebar, text="Hi, " + app["username"] + " 👋", font=(theme.FONT, 11), fg=theme.TEXT, bg=theme.CARD)
-    hello_label.pack(anchor="w", padx=20, pady=(0, 25))
+    # The user card is built first (its streak label is needed by the Today tab), packed further down
+    user_card, streak_label = create_user_card(sidebar, app["username"])
 
-    buttons = {}
-    buttons["today"] = create_sidebar_button(sidebar, "✅ Today", lambda: show_tab("today", content, buttons))
-    buttons["progress"] = create_sidebar_button(sidebar, "🟩 Progress", lambda: show_tab("progress", content, buttons))
-    buttons["badges"] = create_sidebar_button(sidebar, "🏆 Badges", lambda: show_tab("badges", content, buttons))
-    buttons["settings"] = create_sidebar_button(sidebar, "⚙️ Settings", lambda: show_tab("settings", content, buttons))
-    logout_button = create_sidebar_button(sidebar, "🚪 Logout", on_logout)
+    items = {}
+    items["today"] = create_nav_item(sidebar, "✅  Today", lambda: show_tab("today", content, items, streak_label))
+    items["progress"] = create_nav_item(sidebar, "🟩  Progress", lambda: show_tab("progress", content, items, streak_label))
+    items["badges"] = create_nav_item(sidebar, "🏆  Badges", lambda: show_tab("badges", content, items, streak_label))
+    items["settings"] = create_nav_item(sidebar, "⚙️  Settings", lambda: show_tab("settings", content, items, streak_label))
+    # Logout is an item too, but never "active": it just logs out
+    logout = create_nav_item(sidebar, "🚪  Logout", on_logout)
 
-    buttons["today"].pack(fill="x")
-    buttons["progress"].pack(fill="x")
-    buttons["badges"].pack(fill="x")
-    logout_button.pack(side="bottom", fill="x", pady=(0, 20))
-    # Packed at the bottom AFTER Logout, so it sits just above Logout
-    buttons["settings"].pack(side="bottom", fill="x")
+    # Top section: MENU and its three items
+    create_section_label(sidebar, "MENU").pack(anchor="w", padx=20, pady=(0, 6))
+    items["today"]["frame"].pack(fill="x")
+    items["progress"]["frame"].pack(fill="x")
+    items["badges"]["frame"].pack(fill="x")
 
-    show_tab("today", content, buttons)
+    # Bottom section, packed from the bottom up: user card, Logout, Settings, then the ACCOUNT label above them
+    user_card.pack(side="bottom", fill="x", padx=12, pady=(10, 16))
+    logout["frame"].pack(side="bottom", fill="x")
+    items["settings"]["frame"].pack(side="bottom", fill="x")
+    create_section_label(sidebar, "ACCOUNT").pack(side="bottom", anchor="w", padx=20, pady=(0, 6))
+
+    refresh_user_card(streak_label)
+    show_tab("today", content, items, streak_label)
 
 
 # Run this block only when main.py is started directly (not when imported)
