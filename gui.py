@@ -4,6 +4,12 @@ import tkinter as tk
 from tkinter import messagebox
 # Import filedialog, tkinter's ready-made "Open" and "Save As" windows
 from tkinter import filedialog
+# Import tkinter's font tool, so the streak pill can measure its text
+import tkinter.font as tkfont
+# Import ttk for the habit list's scrollbar (ttk scrollbars can be colored to match the theme)
+from tkinter import ttk
+# Import sys to check whether we are running on a Mac (the mouse wheel works differently there)
+import sys
 # Import date, datetime and timedelta for today's date, the current hour and the last 7 days
 from datetime import date, datetime, timedelta
 
@@ -11,8 +17,34 @@ from datetime import date, datetime, timedelta
 import database
 # Import the app's shared colors and font
 import theme
-# Import our reusable widgets (for the rounded rectangle shape of the progress bar)
+# Import our reusable widgets (rounded shapes, buttons, confetti)
 import ui
+# Import heatmap.py for the small "Last 30 days" heatmap, and badges.py for each badge's emoji
+import heatmap
+import badges
+
+PLACEHOLDER = "Add a new habit..."   # grey hint text shown in the empty Add box
+CHECK_SIZE = 22                       # size of the round checkbox (pixels)
+LIST_WHEEL_PIXELS = 40                # how far one mouse-wheel notch scrolls the habit list
+
+# Short habit quotes for the "Quote of the day" card: (quote, author)
+QUOTES = [
+    ("We are what we repeatedly do.", "Will Durant"),
+    ("Motivation is what gets you started. Habit is what keeps you going.", "Jim Ryun"),
+    ("It does not matter how slowly you go as long as you do not stop.", "Confucius"),
+    ("Success is the sum of small efforts, repeated day in and day out.", "Robert Collier"),
+    ("First forget inspiration. Habit is more dependable.", "Octavia Butler"),
+    ("You do not rise to the level of your goals. You fall to the level of your systems.", "James Clear"),
+    ("A journey of a thousand miles begins with a single step.", "Lao Tzu"),
+    ("Every action you take is a vote for the type of person you wish to become.", "James Clear"),
+    ("Habits change into character.", "Ovid"),
+    ("The secret of getting ahead is getting started.", "Mark Twain"),
+    ("The best time to plant a tree was 20 years ago. The second best time is now.", "Chinese proverb"),
+    ("Small steps every day add up to big results.", "Unknown"),
+    ("Don't break the chain.", "Jerry Seinfeld"),
+    ("Discipline is remembering what you want.", "David Campbell"),
+    ("Progress, not perfection.", "Unknown"),
+]
 
 BAR_HEIGHT = 12        # height of the progress bar (pixels)
 FILL_STEPS = 15        # the fill animation takes 15 small steps...
@@ -124,36 +156,65 @@ def update_stats_row(stats, user_id):
     stats["badges"].config(text=str(len(database.get_badges(user_id))) + "/" + str(len(database.MILESTONES)))
 
 
-# Create one row holding the text box and the "Add Habit" button side by side
-def create_input_row(window, user_id):
-    input_frame = tk.Frame(window, bg=theme.BG)
-    input_frame.pack(pady=4)
+# Show the grey placeholder in the Add box (used when it's empty and doesn't have focus)
+def show_placeholder(entry):
+    entry.delete(0, tk.END)
+    entry.insert(0, PLACEHOLDER)
+    entry.config(fg=theme.MUTED)
+    # Remember that the text in the box is only the hint, not something the user typed
+    entry.placeholder_on = True
 
+
+# The user clicked (or tabbed) into the Add box: accent border, and remove the placeholder so they can type
+def on_entry_focus_in(entry, outline):
+    outline.config(bg=theme.ACCENT)
+    if entry.placeholder_on:
+        entry.delete(0, tk.END)
+        entry.config(fg=theme.TEXT)
+        entry.placeholder_on = False
+
+
+# The user left the Add box: normal border, and bring the placeholder back if they left it empty
+def on_entry_focus_out(entry, outline):
+    outline.config(bg=theme.BORDER)
+    if entry.get() == "":
+        show_placeholder(entry)
+
+
+# Return what the user typed in the Add box ("" if it's only showing the placeholder)
+def get_entry_text(entry):
+    if entry.placeholder_on:
+        return ""
+    return entry.get().strip()
+
+
+# Create the add row: an outlined text box with a placeholder, and a "+ Add" button that calls on_add; return the entry
+def create_input_row(window, on_add):
+    input_frame = tk.Frame(window, bg=theme.BG)
+    input_frame.pack(fill="x", pady=(0, 10))
+
+    # The outline is a frame 1px bigger than the entry, so its color shows as a thin border (like auth.py)
+    outline = tk.Frame(input_frame, bg=theme.BORDER)
+    outline.pack(side="left", fill="x", expand=True, padx=(0, 10))
     habit_entry = tk.Entry(
-        input_frame,
-        width=40,
+        outline,
         font=(theme.FONT, 12),
         bg=theme.CARD,
         fg=theme.TEXT,
         insertbackground=theme.TEXT,
         relief="flat",
     )
-    habit_entry.pack(side="left", padx=(0, 10), ipady=6)
+    habit_entry.pack(fill="x", padx=1, pady=1, ipady=8, ipadx=8)
+    show_placeholder(habit_entry)
+    habit_entry.bind("<FocusIn>", lambda event: on_entry_focus_in(habit_entry, outline))
+    habit_entry.bind("<FocusOut>", lambda event: on_entry_focus_out(habit_entry, outline))
+    # Pressing Enter in the box adds the habit, the same as clicking "+ Add"
+    habit_entry.bind("<Return>", lambda event: on_add())
 
-    add_button = tk.Button(
-        input_frame,
-        text="Add Habit",
-        font=(theme.FONT, 11, "bold"),
-        bg=theme.ACCENT,
-        fg=theme.BG,
-        activebackground=theme.ACCENT,
-        relief="flat",
-        padx=15,
-        pady=5,
-    )
+    add_button = ui.rounded_button(input_frame, "+ Add", on_add, "filled", height=40, font_size=11)
     add_button.pack(side="left")
 
-    return habit_entry, add_button
+    return habit_entry
 
 
 # Count today's habits: return (how many are done today, how many habits there are)
@@ -171,7 +232,7 @@ def get_today_progress(user_id):
 # Create the "Today's progress" card (text, bar, message) and return a dictionary of its parts
 def create_progress_card(window):
     card = tk.Frame(window, bg=theme.CARD, highlightthickness=1, highlightbackground=theme.BORDER, padx=16, pady=12)
-    card.pack(fill="x", padx=40, pady=(0, 8))
+    card.pack(fill="x", pady=(0, 10))
 
     # Row 1: title on the left, "3 / 5 done" on the right
     top_row = tk.Frame(card, bg=theme.CARD)
@@ -267,98 +328,331 @@ def update_progress_card(progress, user_id):
     animate_fill(progress, progress["shown"], percent / 100, 1, progress["animation"])
 
 
-# Create an empty bordered card that will hold the habit list later (a solid CARD, so it sits on top of the grid)
-def create_habit_list_area(window):
-    habit_list_frame = tk.Frame(
-        window,
-        bg=theme.CARD,
-        highlightbackground=theme.BORDER,
-        highlightthickness=1,
+# Create one side-panel card with a bold title; return the card so content can be added
+def create_side_card(parent, title):
+    card = tk.Frame(parent, bg=theme.CARD, highlightthickness=1, highlightbackground=theme.BORDER, padx=16, pady=12)
+    card.pack(fill="x", pady=(0, 10))
+    tk.Label(card, text=title, font=(theme.FONT, 11, "bold"), fg=theme.TEXT, bg=theme.CARD).pack(anchor="w", pady=(0, 8))
+    return card
+
+
+# Draw the next-badge progress bar: a BORDER track across the canvas, an ACCENT fill for side["badge_fraction"] of it
+def draw_badge_bar(side):
+    bar = side["badge_bar"]
+    bar.delete("all")
+    width = bar.winfo_width()
+    bar.create_rectangle(0, 0, width, 6, fill=theme.BORDER, outline="")
+    if side["badge_fraction"] > 0:
+        bar.create_rectangle(0, 0, width * side["badge_fraction"], 6, fill=theme.ACCENT, outline="")
+
+
+# Build the right-hand panel: Last 30 days, Next badge and Quote of the day; return a dictionary of its parts
+def create_side_panel(parent, user_id):
+    # Card 1: a small heatmap of the last 30 days (heatmap.py draws it) and a total under it
+    heat_card = create_side_card(parent, "Last 30 days")
+    # empty_color=BORDER: in this theme HEATMAP[0] is the card's own color, so empty days would be invisible
+    mini = heatmap.create_mini_heatmap(heat_card, user_id, days=30, columns=6, square=17, gap=4, empty_color=theme.BORDER)
+    mini.pack(anchor="w")
+    heat_total = tk.Label(heat_card, font=(theme.FONT, 9), fg=theme.MUTED, bg=theme.CARD)
+    heat_total.pack(anchor="w", pady=(8, 0))
+
+    # Card 2: the next locked badge and how close the best current streak is to it
+    badge_card = create_side_card(parent, "Next badge")
+    badge_title = tk.Label(badge_card, font=(theme.FONT, 11, "bold"), fg=theme.TEXT, bg=theme.CARD)
+    badge_title.pack(anchor="w")
+    badge_count = tk.Label(badge_card, font=(theme.FONT, 9), fg=theme.MUTED, bg=theme.CARD)
+    badge_count.pack(anchor="w", pady=(2, 6))
+    badge_bar = tk.Canvas(badge_card, height=6, bg=theme.CARD, highlightthickness=0)
+    badge_bar.pack(fill="x")
+
+    # Card 3: today's quote and its author
+    quote_card = create_side_card(parent, "Quote of the day")
+    quote = tk.Label(quote_card, font=(theme.FONT, 10, "italic"), fg=theme.TEXT, bg=theme.CARD, wraplength=220, justify="left")
+    quote.pack(anchor="w")
+    author = tk.Label(quote_card, font=(theme.FONT, 9), fg=theme.MUTED, bg=theme.CARD)
+    author.pack(anchor="w", pady=(6, 0))
+
+    side = {
+        "mini": mini, "heat_total": heat_total,
+        "badge_title": badge_title, "badge_count": badge_count, "badge_bar": badge_bar, "badge_fraction": 0,
+        "quote": quote, "author": author,
+    }
+    # The bar's real width is only known once it's on screen, so draw it whenever its size changes
+    badge_bar.bind("<Configure>", lambda event: draw_badge_bar(side))
+    return side
+
+
+# Return today's (quote, author): the day of the year picks one, so it changes daily but stays the same all day
+def get_quote_of_the_day():
+    # timetuple().tm_yday is the day of the year: 1 on 1 January ... 365 (or 366) on 31 December
+    day_of_year = date.today().timetuple().tm_yday
+    # % wraps the number around the list: day 16 with 15 quotes picks quote 1 again
+    return QUOTES[day_of_year % len(QUOTES)]
+
+
+# Recalculate everything in the side panel from the database and show it
+def update_side_panel(side, user_id):
+    # Last 30 days: redraw the small heatmap and count the total
+    heatmap.draw_mini_heatmap(side["mini"], user_id, days=30, columns=6, square=17, gap=4, empty_color=theme.BORDER)
+    total = 0
+    for days_ago in range(30):
+        total = total + database.get_count_for_date((date.today() - timedelta(days=days_ago)).isoformat(), user_id)
+    side["heat_total"].config(text=str(total) + " habits done in 30 days")
+
+    # Next badge: the first milestone this user hasn't unlocked yet
+    unlocked = [milestone for milestone, habit_name, unlocked_date in database.get_badges(user_id)]
+    locked = [milestone for milestone in database.MILESTONES if milestone not in unlocked]
+    if len(locked) == 0:
+        side["badge_title"].config(text="👑 All badges unlocked!")
+        side["badge_count"].config(text="")
+        side["badge_fraction"] = 1
+    else:
+        goal = locked[0]
+        # The same "best current streak" the Badges page uses, never shown above the goal
+        best = min(database.get_current_best_streak(user_id), goal)
+        side["badge_title"].config(text=badges.BADGE_EMOJIS[goal] + " " + str(goal) + "-day streak")
+        side["badge_count"].config(text=str(best) + " / " + str(goal) + " days")
+        side["badge_fraction"] = best / goal
+    draw_badge_bar(side)
+
+    # Quote of the day
+    text, who = get_quote_of_the_day()
+    side["quote"].config(text="“" + text + "”")
+    side["author"].config(text="— " + who)
+
+
+# Give the list's scrollbar a slim look in the theme colors (ttk scrollbars can be styled; plain tk ones can't)
+def style_list_scrollbar():
+    style = ttk.Style()
+    # "clam" is a ttk look whose colors can all be changed (the default Windows look ignores them)
+    style.theme_use("clam")
+    # Only a trough with a thumb in it: no arrow buttons at the ends
+    style.layout("Habit.Vertical.TScrollbar", [
+        ("Vertical.Scrollbar.trough", {"sticky": "ns", "children": [("Vertical.Scrollbar.thumb", {"expand": "1", "sticky": "nswe"})]}),
+    ])
+    style.configure(
+        "Habit.Vertical.TScrollbar",
+        background=theme.BORDER, troughcolor=theme.CARD, bordercolor=theme.CARD,
+        lightcolor=theme.BORDER, darkcolor=theme.BORDER, arrowsize=8, gripcount=0,
     )
-    habit_list_frame.pack(fill="both", expand=True, padx=40, pady=(8, 16))
+    # The thumb turns the accent color while dragged or under the mouse
+    style.map("Habit.Vertical.TScrollbar", background=[("pressed", theme.ACCENT), ("active", theme.MUTED)])
+
+
+# Show the scrollbar only when the list is taller than the card (first/last are how much of the list is visible, 0 to 1)
+def update_list_scrollbar(scrollbar, canvas, first, last):
+    scrollbar.set(first, last)
+    if float(first) <= 0 and float(last) >= 1:
+        scrollbar.pack_forget()
+    elif not scrollbar.winfo_ismapped():
+        # before=canvas: pack hands out space in order, and the canvas (expand=True) would otherwise have
+        # taken all of it already, leaving the scrollbar 0 pixels wide
+        scrollbar.pack(side="right", fill="y", padx=(0, 2), pady=2, before=canvas)
+
+
+# Scroll the list with the mouse wheel, but only while the pointer is over the list card
+def on_list_wheel(canvas, card, event):
+    # The wheel is bound for the whole app, so do nothing once this page has been closed
+    if not canvas.winfo_exists():
+        return
+    if not ui.is_inside(card.winfo_containing(event.x_root, event.y_root), card):
+        return
+    # Nothing to scroll if the whole list already fits
+    top, bottom = canvas.yview()
+    if top <= 0 and bottom >= 1:
+        return
+    # Windows reports 120 per wheel notch, a Mac small numbers; one "unit" is 1 pixel (yscrollincrement=1)
+    if sys.platform == "darwin":
+        notches = -event.delta / 10
+    else:
+        notches = -event.delta / 120
+    canvas.yview_scroll(int(notches * LIST_WHEEL_PIXELS), "units")
+
+
+# Create the bordered list card with a scrollable area inside; return the frame that holds the rows
+def create_habit_list_area(window):
+    # The card itself: a solid CARD with a 1px BORDER outline, filling the rest of the column
+    card = tk.Frame(window, bg=theme.CARD, highlightbackground=theme.BORDER, highlightthickness=1)
+    card.pack(fill="both", expand=True)
+
+    style_list_scrollbar()
+    scrollbar = ttk.Scrollbar(card, orient="vertical", style="Habit.Vertical.TScrollbar")
+    # A Canvas can scroll; it shows a "window" onto a frame that can be taller than the card
+    canvas = tk.Canvas(card, bg=theme.CARD, highlightthickness=0, yscrollincrement=1)
+    canvas.pack(side="left", fill="both", expand=True)
+    habit_list_frame = tk.Frame(canvas, bg=theme.CARD)
+    window_id = canvas.create_window(0, 0, window=habit_list_frame, anchor="nw")
+
+    # When the rows change, tell the canvas how tall they are, so it knows how far it can scroll
+    habit_list_frame.bind("<Configure>", lambda event: canvas.configure(scrollregion=canvas.bbox("all")))
+    # When the card changes width, make the rows exactly as wide as the visible area
+    canvas.bind("<Configure>", lambda event: canvas.itemconfigure(window_id, width=event.width))
+    # The scrollbar moves the canvas, and the canvas tells the scrollbar where it is (and whether it's needed)
+    scrollbar.config(command=canvas.yview)
+    canvas.configure(yscrollcommand=lambda first, last: update_list_scrollbar(scrollbar, canvas, first, last))
+    canvas.bind_all("<MouseWheel>", lambda event: on_list_wheel(canvas, card, event))
+
+    # Remember the card and canvas, for the empty state and for scrolling to a newly added habit
+    habit_list_frame.card = card
+    habit_list_frame.canvas = canvas
     return habit_list_frame
 
 
-# Remove every row from the habit list area, then draw one row per habit from the database
+# Draw the round checkbox: an empty ring when not done, an accent circle with a "✓" when done
+def draw_round_check(canvas, checked):
+    canvas.delete("all")
+    # 2px in from the edges so the ring's outline isn't cut off
+    if checked:
+        canvas.create_oval(2, 2, CHECK_SIZE - 2, CHECK_SIZE - 2, fill=theme.ACCENT, outline=theme.ACCENT)
+        canvas.create_text(CHECK_SIZE / 2, CHECK_SIZE / 2, text="✓", fill=theme.BG, font=(theme.FONT, 10, "bold"))
+    else:
+        # MUTED instead of BORDER: BORDER is almost the card's color, and is the hovered row's color,
+        # so a BORDER ring would vanish exactly when the mouse is over the row
+        canvas.create_oval(2, 2, CHECK_SIZE - 2, CHECK_SIZE - 2, outline=theme.MUTED, width=1.5)
+
+
+# Draw a rounded "🔥 N" streak pill on its own small canvas and return it (dim grey when the streak is 0)
+def create_streak_pill(parent, streak):
+    font = tkfont.Font(family=theme.FONT, size=9, weight="bold")
+    text = "🔥 " + str(streak)
+    # The pill is the text's size plus some room around it
+    width = font.measure(text) + 18
+    height = font.metrics("linespace") + 6
+
+    if streak > 0:
+        fill, text_color = theme.ACCENT_SOFT, theme.ACCENT
+    else:
+        fill, text_color = theme.BORDER, theme.MUTED
+    pill = tk.Canvas(parent, width=width, height=height, bg=theme.CARD, highlightthickness=0)
+    # radius = half the height makes both ends fully round, like a pill
+    pill.create_polygon(ui.rounded_rectangle_points(0, 0, width, height, height / 2), smooth=True, fill=fill, outline="")
+    pill.create_text(width / 2, height / 2, text=text, fill=text_color, font=font)
+    return pill
+
+
+# Color a habit row: a slightly lighter background (and a visible 🗑) while hovered, normal otherwise
+def paint_row(row, hovered):
+    background = theme.BORDER if hovered else theme.CARD
+    for widget in row["parts"]:
+        widget.config(bg=background)
+    # The delete icon is "hidden" by drawing it in the same color as the row behind it
+    row["delete"].config(bg=background, fg=theme.MUTED if hovered else background)
+
+
+# The mouse left the row (or moved onto something inside it): un-hover only if it really left the row
+def leave_row(row):
+    x, y = row["frame"].winfo_pointerxy()
+    if not ui.is_inside(row["frame"].winfo_containing(x, y), row["frame"]):
+        paint_row(row, False)
+
+
+# Flip a habit's done state, exactly like clicking the old Checkbutton did, then run the usual tick logic
+def on_round_check_click(habit_id, done_var, habit_list_frame, user_id, on_change):
+    done_var.set(not done_var.get())
+    on_check_click(habit_id, done_var, habit_list_frame, user_id, on_change)
+
+
+# Ask "are you sure?" before deleting a habit and its history
+def confirm_delete(habit_id, name, habit_list_frame, user_id, on_change):
+    if messagebox.askyesno("Delete habit?", 'Delete "' + name + '" and all of its history?'):
+        on_delete_click(habit_id, habit_list_frame, user_id, on_change)
+
+
+# Build one habit row (round checkbox, name, streak pill, hidden 🗑) inside the list card
+def create_habit_row(habit_list_frame, habit_id, name, user_id, on_change):
+    today = date.today().isoformat()
+    done = database.is_done(habit_id, today)
+
+    frame = tk.Frame(habit_list_frame, bg=theme.CARD, padx=14, pady=7)
+    frame.pack(fill="x")
+
+    # The round checkbox: a small Canvas that redraws itself as a ring or a ticked circle
+    done_var = tk.BooleanVar(value=done)
+    check = tk.Canvas(frame, width=CHECK_SIZE, height=CHECK_SIZE, bg=theme.CARD, highlightthickness=0, cursor="hand2")
+    draw_round_check(check, done)
+    check.pack(side="left", padx=(0, 12))
+    check.bind("<Button-1>", lambda event: on_round_check_click(habit_id, done_var, habit_list_frame, user_id, on_change))
+
+    # Done today: grey text with a line through it ("overstrike" draws that line)
+    if done:
+        name_label = tk.Label(frame, text=name, font=(theme.FONT, 12, "overstrike"), fg=theme.MUTED, bg=theme.CARD)
+    else:
+        name_label = tk.Label(frame, text=name, font=(theme.FONT, 12), fg=theme.TEXT, bg=theme.CARD)
+    name_label.pack(side="left")
+
+    pill = create_streak_pill(frame, database.get_streak(habit_id))
+    pill.pack(side="left", padx=(12, 0))
+
+    # Starts invisible (same color as the row); paint_row shows it while the mouse is over the row
+    delete = tk.Label(frame, text="🗑", font=(theme.FONT, 12), fg=theme.CARD, bg=theme.CARD, cursor="hand2")
+    delete.pack(side="right")
+    delete.bind("<Button-1>", lambda event: confirm_delete(habit_id, name, habit_list_frame, user_id, on_change))
+    # While the mouse is on the icon itself, it turns red
+    delete.bind("<Enter>", lambda event: delete.config(fg=theme.ERROR))
+    delete.bind("<Leave>", lambda event: delete.config(fg=theme.MUTED))
+
+    row = {"frame": frame, "delete": delete, "parts": [frame, check, name_label, pill]}
+    frame.bind("<Enter>", lambda event: paint_row(row, True))
+    frame.bind("<Leave>", lambda event: leave_row(row))
+
+
+# Show the "No habits yet" message in the middle of the empty list card
+def create_empty_state(habit_list_frame):
+    # Placed on the card itself (not the scrolling rows frame, which is only as tall as its rows)
+    empty = tk.Frame(habit_list_frame.card, bg=theme.CARD)
+    # relx/rely 0.5 with anchor="center" puts it in the exact middle of the card
+    empty.place(relx=0.5, rely=0.5, anchor="center")
+    habit_list_frame.empty = empty
+    tk.Label(empty, text="🌱", font=(theme.FONT, 30), fg=theme.ACCENT, bg=theme.CARD).pack()
+    tk.Label(empty, text="No habits yet", font=(theme.FONT, 13, "bold"), fg=theme.TEXT, bg=theme.CARD).pack(pady=(6, 2))
+    tk.Label(empty, text="Add your first habit above to start a streak", font=(theme.FONT, 10), fg=theme.MUTED, bg=theme.CARD).pack()
+
+
+# Remove every row from the habit list card, then draw one row per habit (or the empty state)
 def refresh_habit_list(habit_list_frame, user_id, on_change=None):
     for child in habit_list_frame.winfo_children():
         child.destroy()
+    # The empty-state message lives on the card, not in the rows frame, so remove it separately
+    if hasattr(habit_list_frame, "empty") and habit_list_frame.empty.winfo_exists():
+        habit_list_frame.empty.destroy()
 
-    today = date.today().isoformat()
+    habits = database.get_all_habits(user_id)
+    if len(habits) == 0:
+        create_empty_state(habit_list_frame)
 
-    for habit_id, name in database.get_all_habits(user_id):
-        # Every row and everything in it uses CARD, the same color as the list card behind it
-        row_frame = tk.Frame(habit_list_frame, bg=theme.CARD)
-        row_frame.pack(fill="x", padx=15, pady=5)
+    for i in range(len(habits)):
+        habit_id, name = habits[i]
+        # A 1px line BETWEEN rows: before every row except the first, so there's none after the last
+        if i > 0:
+            tk.Frame(habit_list_frame, bg=theme.BORDER, height=1).pack(fill="x")
+        create_habit_row(habit_list_frame, habit_id, name, user_id, on_change)
 
-        done_var = tk.BooleanVar(value=database.is_done(habit_id, today))
-        done_checkbox = tk.Checkbutton(
-            row_frame,
-            variable=done_var,
-            bg=theme.CARD,
-            fg=theme.TEXT,
-            # selectcolor is the inside of the tick box: BG (darker) so the box stands out on the card
-            selectcolor=theme.BG,
-            activebackground=theme.CARD,
-            activeforeground=theme.TEXT,
-            highlightthickness=0,
-            command=lambda habit_id=habit_id, done_var=done_var: on_check_click(
-                habit_id, done_var, habit_list_frame, user_id, on_change
-            ),
-        )
-        done_checkbox.pack(side="left")
-
-        name_label = tk.Label(
-            row_frame,
-            text=name,
-            font=(theme.FONT, 12),
-            fg=theme.TEXT,
-            bg=theme.CARD,
-        )
-        name_label.pack(side="left")
-
-        streak_label = tk.Label(
-            row_frame,
-            text="🔥 " + str(database.get_streak(habit_id)) + " day streak",
-            font=(theme.FONT, 10),
-            fg=theme.ACCENT,
-            bg=theme.CARD,
-        )
-        streak_label.pack(side="left", padx=(15, 0))
-
-        # BORDER (a bit lighter than the card) so the button is still visible on the card
-        delete_button = tk.Button(
-            row_frame,
-            text="Delete",
-            font=(theme.FONT, 9),
-            bg=theme.BORDER,
-            fg=theme.TEXT,
-            activebackground=theme.BG,
-            activeforeground=theme.TEXT,
-            relief="flat",
-            padx=8,
-            command=lambda habit_id=habit_id: on_delete_click(habit_id, habit_list_frame, user_id, on_change),
-        )
-        delete_button.pack(side="right")
-
-    # Every add, delete, tick and untick ends up here, so this keeps the progress card and stat cards up to date too
+    # Every add, delete, tick and untick ends up here, so this keeps the progress card, stat cards and side panel up to date too
     if hasattr(habit_list_frame, "progress"):
         update_progress_card(habit_list_frame.progress, user_id)
     if hasattr(habit_list_frame, "stats"):
         update_stats_row(habit_list_frame.stats, user_id)
+    if hasattr(habit_list_frame, "side"):
+        update_side_panel(habit_list_frame.side, user_id)
 
 
 # Add the habit typed in the Entry box, warn if it already exists, then redraw the list
 def on_add_click(habit_entry, habit_list_frame, user_id, on_change=None):
-    name = habit_entry.get().strip()
+    # get_entry_text ignores the grey placeholder, so clicking "+ Add" on an empty box does nothing
+    name = get_entry_text(habit_entry)
     if name == "":
         return
 
-    if not database.add_habit(user_id, name):
+    added = database.add_habit(user_id, name)
+    if not added:
         messagebox.showwarning("Consistify", "Habit already exists")
 
     habit_entry.delete(0, tk.END)
     refresh_habit_list(habit_list_frame, user_id, on_change)
+    if added:
+        # New habits go at the bottom of the list, so scroll down to show it (once the new row has its size)
+        habit_list_frame.update_idletasks()
+        habit_list_frame.canvas.yview_moveto(1)
     if on_change is not None:
         on_change()
 
@@ -383,8 +677,9 @@ def on_check_click(habit_id, done_var, habit_list_frame, user_id, on_change=None
     if not done_var.get():
         return
 
-    # habit_list_frame.master is the frame the habit section was built in (the dashboard's content area)
-    content = habit_list_frame.master
+    # habit_list_frame.content is the frame the whole habit section was built in (the dashboard's content area),
+    # so the celebration covers the whole page, not just the left column the list sits in
+    content = habit_list_frame.content
     if len(new_badges) > 0:
         # A new badge beats "all done": only one kind of celebration at a time
         show_badge_celebrations(content, new_badges)
@@ -397,14 +692,14 @@ def on_check_click(habit_id, done_var, habit_list_frame, user_id, on_change=None
 
 
 # Celebrate the first badge in the list, then the next one once that celebration has finished, and so on
-def show_badge_celebrations(content, badges):
-    if len(badges) == 0 or not content.winfo_exists():
+def show_badge_celebrations(content, remaining):
+    if len(remaining) == 0 or not content.winfo_exists():
         return
 
-    milestone, habit_name = badges[0]
+    milestone, habit_name = remaining[0]
     ui.show_confetti(content, "🏆 " + str(milestone) + "-day streak unlocked!", subtitle=habit_name)
     # Wait for this celebration to close by itself (plus a short pause) before showing the next badge
-    content.winfo_toplevel().after(ui.CONFETTI_TIME + 300, lambda: show_badge_celebrations(content, badges[1:]))
+    content.winfo_toplevel().after(ui.CONFETTI_TIME + 300, lambda: show_badge_celebrations(content, remaining[1:]))
 
 
 # Ask where to save the report, then write the CSV there (do nothing if cancelled)
@@ -430,21 +725,37 @@ def on_delete_click(habit_id, habit_list_frame, user_id, on_change=None):
         on_change()
 
 
-# Build the whole habit section (header, stat cards, progress card, input row, habit list) for one user
-# inside any window or frame; username is used in the greeting
+# Build the whole Today page for one user inside any window or frame: header and stat cards across the top,
+# then two columns (progress, add row and habit list on the left; the side panel on the right)
 def create_habit_section(parent, user_id, on_change=None, username="there"):
     create_page_header(parent, user_id, username)
     stats = create_stats_row(parent)
-    progress = create_progress_card(parent)
-    habit_entry, add_button = create_input_row(parent, user_id)
-    habit_list_frame = create_habit_list_area(parent)
-    # Attach the progress card and stat cards to the list frame: every function that redraws the list
-    # already receives habit_list_frame, so it can reach them through it without an extra parameter
+
+    # Two columns sharing the width 2 : 1 (weight=2 and weight=1; uniform makes the weights exact),
+    # with 8px on each side of the middle, which makes the 16px gap
+    body = tk.Frame(parent, bg=theme.BG)
+    body.pack(fill="both", expand=True, padx=40, pady=(0, 16))
+    body.columnconfigure(0, weight=2, uniform="body")
+    body.columnconfigure(1, weight=1, uniform="body")
+    body.rowconfigure(0, weight=1)
+    left = tk.Frame(body, bg=theme.BG)
+    left.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+    right = tk.Frame(body, bg=theme.BG)
+    right.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
+
+    progress = create_progress_card(left)
+    # The lambda only runs when "+ Add" is clicked, by which time habit_entry and habit_list_frame exist
+    habit_entry = create_input_row(left, lambda: on_add_click(habit_entry, habit_list_frame, user_id, on_change))
+    habit_list_frame = create_habit_list_area(left)
+    side = create_side_panel(right, user_id)
+
+    # Attach the cards to the list frame: every function that redraws the list already receives
+    # habit_list_frame, so it can reach them through it without an extra parameter
     habit_list_frame.progress = progress
     habit_list_frame.stats = stats
-
-    add_button.config(command=lambda: on_add_click(habit_entry, habit_list_frame, user_id, on_change))
-    habit_entry.bind("<Return>", lambda event: on_add_click(habit_entry, habit_list_frame, user_id, on_change))
+    habit_list_frame.side = side
+    # The whole page's frame, so celebrations can cover all of it
+    habit_list_frame.content = parent
 
     refresh_habit_list(habit_list_frame, user_id, on_change)
 

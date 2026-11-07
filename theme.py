@@ -21,6 +21,9 @@ ACCENT = "#FE7F2D"
 # accent color when hovering (lighter orange)
 ACCENT_HOVER = "#FF9A52"
 
+# dark orange tint (about 18% of the way from CARD to ACCENT), behind accent text like the streak pills
+ACCENT_SOFT = "#3F2A1B"
+
 # error messages (deeper red so it doesn't look like the orange)
 ERROR = "#E5484D"
 

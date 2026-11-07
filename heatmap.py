@@ -216,6 +216,37 @@ def create_stats_section(parent, user_id):
     return section
 
 
+# Draw a small heatmap of the last `days` days on an existing canvas: `columns` squares per row,
+# oldest at the top-left, today at the bottom-right with a light outline (wipes the canvas first, so it can redraw).
+# empty_color is used for days with nothing done (HEATMAP[0] can be the same color as a card, which would hide them)
+def draw_mini_heatmap(canvas, user_id, days=30, columns=6, square=24, gap=5, empty_color=None):
+    canvas.delete("all")
+    today = date.today()
+    for i in range(days):
+        # i = 0 is the oldest day (days - 1 days ago); the last i is today
+        day = today - timedelta(days=days - 1 - i)
+        count = database.get_count_for_date(day.isoformat(), user_id)
+        # i // columns is the row and i % columns the column
+        x1 = (i % columns) * (square + gap)
+        y1 = (i // columns) * (square + gap)
+        border = theme.TEXT if day == today else ""
+        color = get_color(count)
+        if count == 0 and empty_color is not None:
+            color = empty_color
+        canvas.create_rectangle(x1, y1, x1 + square, y1 + square, fill=color, outline=border)
+
+
+# Create a canvas just big enough for a small heatmap, draw it, and return the canvas
+def create_mini_heatmap(parent, user_id, days=30, columns=6, square=24, gap=5, empty_color=None):
+    rows = (days + columns - 1) // columns
+    width = columns * (square + gap) - gap
+    height = rows * (square + gap) - gap
+    # +1 so today's 1px outline on the right/bottom edge isn't cut off
+    canvas = tk.Canvas(parent, width=width + 1, height=height + 1, bg=parent.cget("bg"), highlightthickness=0)
+    draw_mini_heatmap(canvas, user_id, days, columns, square, gap, empty_color)
+    return canvas
+
+
 # Return the last 7 days as a list of (date, count), oldest first and today last
 def get_week_counts(user_id):
     today = date.today()
