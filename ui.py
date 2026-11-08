@@ -145,6 +145,19 @@ def add_page_row(page):
     return row
 
 
+# Blend two "#rrggbb" colors: t=0 gives color1, t=1 gives color2, t=0.5 the color halfway between (used for fades)
+def blend(color1, color2, t):
+    # Keep t between 0 and 1, so a slightly-too-late animation step can't make an invalid color
+    t = max(0, min(1, t))
+    result = "#"
+    # Red, green and blue are two hex digits each: characters 1-2, 3-4 and 5-6
+    for start in (1, 3, 5):
+        a = int(color1[start:start + 2], 16)
+        b = int(color2[start:start + 2], 16)
+        result = result + format(round(a + (b - a) * t), "02x")
+    return result
+
+
 # Return the corner points of a rounded rectangle; with smooth=True, tkinter bends the outline through them
 def rounded_rectangle_points(x1, y1, x2, y2, radius):
     # Each corner is one point, with a point `radius` away from it along each edge on either side.
