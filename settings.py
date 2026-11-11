@@ -130,15 +130,17 @@ def build_danger_card(column_frame, user_id, on_account_deleted):
 
 # Build the whole Settings page inside the parent
 def build_settings_page(parent, user_id, username, on_account_deleted):
-    page = tk.Frame(parent, bg=theme.BG, padx=32, pady=16)
-    page.pack(fill="both", expand=True)
+    # Padding OUTSIDE the frame (pack's padx/pady) and no expand, so the frame only covers the cards
+    # and the grid background shows in the margins and empty space around them
+    page = tk.Frame(parent, bg=theme.BG)
+    page.pack(fill="x", padx=32, pady=16)
 
     header = tk.Label(page, text="Settings", font=(theme.FONT, 22, "bold"), fg=theme.TEXT, bg=theme.BG)
     header.pack(anchor="w", padx=8, pady=(0, 4))
 
     # Two equal columns: Account and Danger zone on the left, Change password on the right
     columns = tk.Frame(page, bg=theme.BG)
-    columns.pack(fill="both", expand=True)
+    columns.pack(fill="x")
     columns.columnconfigure(0, weight=1, uniform="settings")
     columns.columnconfigure(1, weight=1, uniform="settings")
 

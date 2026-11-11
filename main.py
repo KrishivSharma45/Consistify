@@ -15,9 +15,42 @@ import welcome
 
 WINDOW_WIDTH = 1100
 WINDOW_HEIGHT = 700
+ICON_SIZES = [16, 32, 64]   # the app icon is drawn at these sizes (pixels); Windows picks the best one for each place
 
-# The one window, and who is logged in (None when nobody is)
-app = {"window": None, "user_id": None, "username": None}
+# The one window, who is logged in (None when nobody is), and the icon images
+app = {"window": None, "user_id": None, "username": None, "icons": []}
+
+
+# Draw the logo (a 2x2 grid of heatmap-colored squares) as an image of size x size pixels and return it
+def create_icon_image(size):
+    image = tk.PhotoImage(width=size, height=size)
+    # The same four shades, in the same order, as the logo in the sidebar
+    shades = [theme.HEATMAP[2], theme.HEATMAP[4], theme.HEATMAP[1], theme.HEATMAP[3]]
+    gap = max(1, size // 8)
+    square = (size - gap) // 2
+    for i in range(4):
+        # i % 2 is the column (0, 1, 0, 1) and i // 2 the row (0, 0, 1, 1)
+        left = (i % 2) * (square + gap)
+        top = (i // 2) * (square + gap)
+        # put() colors every pixel in the box (left, top) to (right, bottom); pixels never colored stay see-through
+        image.put(shades[i], to=(left, top, left + square, top + square))
+    return image
+
+
+# The window has appeared on screen: use the logo as its icon (title bar, taskbar, and the pop-up dialogs too)
+def apply_app_icon(window, event):
+    # <Map> also fires for every widget inside the window and again after un-minimizing, so do it once, for the window
+    if event.widget is not window or len(app["icons"]) > 0:
+        return
+    app["icons"] = [create_icon_image(size) for size in ICON_SIZES]
+    # True = also use it for every window opened later (like the "are you sure?" pop-ups).
+    # The images are kept in app["icons"]: if Python threw them away, the icon would go blank
+    window.iconphoto(True, *app["icons"])
+
+
+# Set the icon once the window is really on screen (<Map>); on Windows, an icon set before that is ignored
+def set_app_icon(window):
+    window.bind("<Map>", lambda event: apply_app_icon(window, event), add="+")
 
 
 # Set the window's size and move it to the middle of the screen
@@ -228,6 +261,7 @@ if __name__ == "__main__":
     app["window"] = tk.Tk()
     app["window"].title("Consistify")
     app["window"].configure(bg=theme.BG)
+    set_app_icon(app["window"])
     center_window(app["window"])
 
     show_splash()
