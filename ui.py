@@ -145,6 +145,34 @@ def add_page_row(page):
     return row
 
 
+# Rate a password for the strength meter; return (bars to fill 0-4, label, color). Only a hint, never a rule
+def password_strength(password):
+    if password == "":
+        return 0, "", theme.BORDER
+    if len(password) < 6:
+        return 1, "Too short", theme.ERROR
+
+    # One point for each thing that makes a password harder to guess
+    score = 0
+    if len(password) >= 8:
+        score = score + 1
+    if any(character.isdigit() for character in password):
+        score = score + 1
+    if any(character.isupper() for character in password):
+        score = score + 1
+    # A symbol is anything that isn't a letter or a number, like ! @ # or a space
+    if any(not character.isalnum() for character in password):
+        score = score + 1
+
+    if score <= 1:
+        return 1, "Weak", theme.ERROR
+    if score == 2:
+        return 2, "Okay", theme.ACCENT_HOVER
+    if score == 3:
+        return 3, "Good", theme.ACCENT
+    return 4, "Strong", theme.SUCCESS
+
+
 # Blend two "#rrggbb" colors: t=0 gives color1, t=1 gives color2, t=0.5 the color halfway between (used for fades)
 def blend(color1, color2, t):
     # Keep t between 0 and 1, so a slightly-too-late animation step can't make an invalid color

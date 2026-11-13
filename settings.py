@@ -55,6 +55,8 @@ def on_update_password(form, user_id):
 
     for name in ("current", "new", "confirm"):
         form[name].delete(0, tk.END)
+    # delete() doesn't count as typing, so empty the meter by hand
+    auth.update_strength_meter(form["meter"], "")
     form["message"].config(text="Password updated", fg=theme.SUCCESS)
 
 
@@ -97,12 +99,18 @@ def build_password_card(parent, user_id):
     # bg=CARD behind the labels, entry_bg=BG inside the boxes, so the boxes stand out on the card
     current_field, current = auth.create_field(card, "CURRENT PASSWORD", is_password=True, bg=theme.CARD, entry_bg=theme.BG)
     new_field, new = auth.create_field(card, "NEW PASSWORD", is_password=True, bg=theme.CARD, entry_bg=theme.BG)
+    # The same strength meter as the sign-up page, right under the new password box
+    meter = auth.create_strength_meter(new_field, theme.CARD)
+    meter["frame"].pack(fill="x", pady=(6, 0))
+    auth.update_strength_meter(meter, "")
+    # <KeyRelease> happens every time a key is let go, so the meter follows each letter typed or deleted
+    new.bind("<KeyRelease>", lambda event: auth.update_strength_meter(meter, new.get()))
     confirm_field, confirm = auth.create_field(card, "CONFIRM NEW PASSWORD", is_password=True, bg=theme.CARD, entry_bg=theme.BG)
 
     message = tk.Label(card, text="", font=(theme.FONT, 10), bg=theme.CARD, wraplength=320, justify="left")
     message.pack(anchor="w", pady=(0, 8))
 
-    form = {"current": current, "new": new, "confirm": confirm, "message": message}
+    form = {"current": current, "new": new, "confirm": confirm, "message": message, "meter": meter}
     button = ui.rounded_button(card, "Update password", lambda: on_update_password(form, user_id), "filled", height=42)
     button.pack(fill="x")
     # Pressing Enter in any of the boxes also updates the password

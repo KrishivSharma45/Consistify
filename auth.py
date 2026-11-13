@@ -198,6 +198,34 @@ def create_field(form, label_text, is_password=False, bg=theme.BG, entry_bg=them
     return field, entry
 
 
+# Create the password strength meter (4 thin bars and a label) inside a field; return its parts (not packed yet)
+def create_strength_meter(field, bg):
+    meter = tk.Frame(field, bg=bg)
+    bar_row = tk.Frame(meter, bg=bg)
+    bar_row.pack(side="left", fill="x", expand=True)
+    bars = []
+    for i in range(4):
+        # A Frame with nothing inside keeps the height we give it, so it works as a thin colored bar
+        bar = tk.Frame(bar_row, bg=theme.BORDER, height=4)
+        bar.pack(side="left", fill="x", expand=True, padx=(0, 4))
+        bars.append(bar)
+    # width=9 keeps room for the longest label ("Too short"), so the bars don't jump when the text changes
+    label = tk.Label(meter, text="", width=9, anchor="e", font=(theme.FONT, 8, "bold"), fg=theme.MUTED, bg=bg)
+    label.pack(side="right")
+    return {"frame": meter, "bars": bars, "label": label}
+
+
+# Color the meter for this password: the first N bars in the strength color, the rest BORDER, and set the label
+def update_strength_meter(meter, password):
+    filled, text, color = ui.password_strength(password)
+    for i, bar in enumerate(meter["bars"]):
+        if i < filled:
+            bar.config(bg=color)
+        else:
+            bar.config(bg=theme.BORDER)
+    meter["label"].config(text=text, fg=color)
+
+
 # Show a message under the form in the given color (theme.ERROR for errors, theme.SUCCESS for success)
 def show_message(page, text, color):
     page["message_label"].config(text=text, fg=color)
@@ -209,15 +237,21 @@ def set_mode(page, mode):
     show_message(page, "", theme.ERROR)
     page["password_entry"].delete(0, tk.END)
     page["confirm_entry"].delete(0, tk.END)
+    # delete() doesn't count as typing, so reset the meter by hand
+    update_strength_meter(page["meter"], "")
 
     if mode == "login":
         page["confirm_field"].pack_forget()
+        # The meter is only a hint for new passwords, so it's hidden when logging in
+        page["meter"]["frame"].pack_forget()
         page["heading"].config(text="Welcome back")
         page["subtitle"].config(text="Log in to keep your streak alive.")
         ui.set_button_text(page["submit_button"], "Log in")
         page["switch_link"].config(text="New here? Create an account")
     else:
         page["confirm_field"].pack(fill="x", pady=(0, 14), before=page["message_label"])
+        # Packed last inside the password field, so it sits right under the password box
+        page["meter"]["frame"].pack(fill="x", pady=(6, 0))
         page["heading"].config(text="Create your account")
         page["subtitle"].config(text="Start your first streak today.")
         ui.set_button_text(page["submit_button"], "Create account")
@@ -302,6 +336,9 @@ def build_right_half(right, on_login_success, on_back):
     username_field, username_entry = create_field(form, "USERNAME")
     password_field, password_entry = create_field(form, "PASSWORD", is_password=True)
     confirm_field, confirm_entry = create_field(form, "CONFIRM PASSWORD", is_password=True)
+    meter = create_strength_meter(password_field, theme.BG)
+    # <KeyRelease> happens every time a key is let go, so the meter follows each letter typed or deleted
+    password_entry.bind("<KeyRelease>", lambda event: update_strength_meter(meter, password_entry.get()))
 
     # wraplength stops a long message from making the form wider
     message_label = tk.Label(form, text="", font=(theme.FONT, 10), bg=theme.BG, wraplength=FORM_WIDTH)
@@ -323,6 +360,7 @@ def build_right_half(right, on_login_success, on_back):
         "password_entry": password_entry,
         "confirm_field": confirm_field,
         "confirm_entry": confirm_entry,
+        "meter": meter,
         "message_label": message_label,
         "submit_button": submit_button,
     }
